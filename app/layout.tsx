@@ -15,8 +15,9 @@ const syne = Syne({
 });
 
 export const metadata: Metadata = {
-  title: "Janaki Guru Enterprises – HI-FI Stationery",
-  description: "Order stationery, school & office supplies with fast local delivery within 10 km.",
+  title: "Janaki Guru Enterprises - Stationery Store | Thoothukudi",
+  description: "Order stationery, pencils, notebooks, school & office supplies online from Janaki Guru Enterprises. Fast local delivery within 10 km in Thoothukudi.",
+  keywords: "janaki guru enterprises, stationery store thoothukudi, pencils notebooks tuticorin, school supplies",
 };
 
 export default function RootLayout({
