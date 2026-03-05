@@ -12,11 +12,11 @@ interface Product {
   name: string;
   price: number;
   mrp: number;
-  category: string;
+  wholesale_price?: number;
+  category: string | string[];
   image_url: string[];
   video_url?: string;
-  keywords: string;
-  created_at?: string;
+  keywords: string | string[];
 }
 
 interface Order {
@@ -30,8 +30,8 @@ interface Order {
 }
 
 const emptyForm = {
-  name: "", price: "", mrp: "", category: "",
-  image_url: "", video_url: "", keywords: "",
+  name: "", price: "", mrp: "", wholesale_price: "",
+  category: "", image_url: "", video_url: "", keywords: "",
 };
 
 export default function AdminPage() {
@@ -83,15 +83,20 @@ export default function AdminPage() {
     setAuthed(false);
   }
 
+  function getCategoryStr(cat: string | string[]) {
+    return Array.isArray(cat) ? cat.join(", ") : (cat || "");
+  }
+
   function startEdit(p: Product) {
     setForm({
       name: p.name,
       price: String(p.price),
       mrp: String(p.mrp),
-      category: p.category,
+      wholesale_price: p.wholesale_price ? String(p.wholesale_price) : "",
+      category: getCategoryStr(p.category),
       image_url: Array.isArray(p.image_url) ? p.image_url.join("\n") : "",
       video_url: p.video_url || "",
-      keywords: Array.isArray(p.keywords) ? (p.keywords as any[]).join(", ") : (p.keywords || ""),
+      keywords: Array.isArray(p.keywords) ? (p.keywords as string[]).join(", ") : (p.keywords || ""),
     });
     setEditId(p.id);
     setTab("addproduct");
@@ -111,13 +116,18 @@ export default function AdminPage() {
       return;
     }
     setSaving(true);
+
     const imageArr = form.image_url.split("\n").map(s => s.trim()).filter(Boolean);
     const keywordsArr = form.keywords.split(",").map(s => s.trim()).filter(Boolean);
-    const payload = {
+    // Multiple categories — split by comma
+    const categoryArr = form.category.split(",").map(s => s.trim()).filter(Boolean);
+
+    const payload: any = {
       name: form.name.trim(),
       price: Number(form.price),
       mrp: Number(form.mrp),
-      category: form.category.trim(),
+      wholesale_price: form.wholesale_price ? Number(form.wholesale_price) : null,
+      category: categoryArr.length === 1 ? categoryArr[0] : categoryArr,
       image_url: imageArr,
       video_url: form.video_url.trim() || null,
       keywords: keywordsArr,
@@ -148,7 +158,7 @@ export default function AdminPage() {
 
   if (!isMounted) return null;
 
-  // ── LOGIN SCREEN ──
+  // ── LOGIN ──
   if (!authed) {
     return (
       <div style={{
@@ -164,22 +174,15 @@ export default function AdminPage() {
           <div style={{ fontSize: 48, marginBottom: 12 }}>🔐</div>
           <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Admin Panel</div>
           <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginBottom: 28 }}>Janaki Guru Enterprises</div>
-
-          <input
-            type="password"
-            placeholder="Enter admin password"
-            value={pw}
+          <input type="password" placeholder="Enter admin password" value={pw}
             onChange={e => setPw(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleLogin()}
             style={{
               width: "100%", background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.15)",
               borderRadius: 12, padding: "12px 16px", fontSize: 14, color: "#fff",
               outline: "none", fontFamily: "system-ui,sans-serif", marginBottom: 12,
-            }}
-          />
-
+            }} />
           {pwError && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 10, fontWeight: 600 }}>{pwError}</div>}
-
           <button onClick={handleLogin} style={{
             width: "100%", background: "linear-gradient(135deg,#ef4444,#b91c1c)",
             color: "#fff", border: "none", borderRadius: 12, padding: "12px 0",
@@ -190,14 +193,14 @@ export default function AdminPage() {
     );
   }
 
-  // ── ADMIN DASHBOARD ──
+  // ── DASHBOARD ──
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "system-ui,sans-serif" }}>
 
       {/* Top bar */}
       <div style={{
-        background: "linear-gradient(135deg,#1a1a2e,#0f3460)",
-        padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center",
+        background: "linear-gradient(135deg,#1a1a2e,#0f3460)", padding: "14px 20px",
+        display: "flex", justifyContent: "space-between", alignItems: "center",
         position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
       }}>
         <div>
@@ -213,26 +216,25 @@ export default function AdminPage() {
       {/* Tab bar */}
       <div style={{
         background: "#fff", borderBottom: "2px solid #e2e8f0",
-        display: "flex", gap: 0, position: "sticky", top: 52, zIndex: 99,
+        display: "flex", position: "sticky", top: 52, zIndex: 99,
       }}>
         {([
           { key: "products", label: `📦 Products (${products.length})` },
           { key: "orders", label: `🛒 Orders (${orders.length})` },
-          { key: "addproduct", label: editId ? "✏️ Edit Product" : "➕ Add Product" },
+          { key: "addproduct", label: editId ? "✏️ Edit" : "➕ Add" },
         ] as { key: Tab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); if (t.key !== "addproduct") resetForm(); }} style={{
             flex: 1, padding: "13px 8px", border: "none", background: "none",
             fontSize: 12, fontWeight: 700, cursor: "pointer",
             color: tab === t.key ? "#dc2626" : "#64748b",
             borderBottom: tab === t.key ? "3px solid #dc2626" : "3px solid transparent",
-            transition: "all 0.15s",
           }}>{t.label}</button>
         ))}
       </div>
 
       <div style={{ padding: "16px 14px 80px" }}>
 
-        {/* ── PRODUCTS TAB ── */}
+        {/* ── PRODUCTS ── */}
         {tab === "products" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -242,9 +244,8 @@ export default function AdminPage() {
                 border: "none", borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
               }}>+ Add New</button>
             </div>
-
             {products.length === 0 ? (
-              <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>No products yet. Add your first product!</div>
+              <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>No products yet.</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {products.map(p => (
@@ -253,29 +254,26 @@ export default function AdminPage() {
                     boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0",
                     display: "flex", alignItems: "center", gap: 12,
                   }}>
-                    {/* Image */}
                     <div style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", background: "#fff5f5", flexShrink: 0, border: "1px solid #fee2e2" }}>
                       {p.image_url?.[0] ? (
                         <img src={p.image_url[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }}
                           onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                       ) : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>}
                     </div>
-
-                    {/* Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>{p.name}</div>
-                      <div style={{ fontSize: 11, color: "#64748b" }}>{p.category}</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", marginTop: 2 }}>
-                        ₹{p.price} <span style={{ color: "#94a3b8", fontWeight: 400, textDecoration: "line-through" }}>₹{p.mrp}</span>
+                      <div style={{ fontSize: 11, color: "#64748b" }}>{getCategoryStr(p.category)}</div>
+                      <div style={{ fontSize: 12, marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{p.price}</span>
+                        <span style={{ color: "#94a3b8", textDecoration: "line-through" }}>₹{p.mrp}</span>
+                        {p.wholesale_price && <span style={{ fontWeight: 700, color: "#0ea5e9" }}>W: ₹{p.wholesale_price}</span>}
                       </div>
                     </div>
-
-                    {/* Actions */}
                     <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                       <button onClick={() => startEdit(p)} style={{
                         background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb",
                         borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                      }}>✏️ Edit</button>
+                      }}>✏️</button>
                       <button onClick={() => setDeleteId(p.id)} style={{
                         background: "#fff5f5", border: "1px solid #fecaca", color: "#dc2626",
                         borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer",
@@ -288,7 +286,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── ORDERS TAB ── */}
+        {/* ── ORDERS ── */}
         {tab === "orders" && (
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 14 }}>All Orders</div>
@@ -315,12 +313,11 @@ export default function AdminPage() {
                         <button onClick={() => setExpandOrder(expandOrder === o.id ? null : o.id)} style={{
                           background: "#f1f5f9", border: "none", borderRadius: 8,
                           padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", marginTop: 4, color: "#475569",
-                        }}>{expandOrder === o.id ? "Hide items" : "View items"}</button>
+                        }}>{expandOrder === o.id ? "Hide" : "View items"}</button>
                       </div>
                     </div>
-
                     {expandOrder === o.id && (
-                      <div style={{ borderTop: "1px dashed #e2e8f0", paddingTop: 10, marginTop: 4 }}>
+                      <div style={{ borderTop: "1px dashed #e2e8f0", paddingTop: 10 }}>
                         {(o.items || []).map((item: any, i: number) => (
                           <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", color: "#475569" }}>
                             <span>• {item.name} × {item.quantity}</span>
@@ -336,7 +333,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── ADD / EDIT PRODUCT TAB ── */}
+        {/* ── ADD / EDIT PRODUCT ── */}
         {tab === "addproduct" && (
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>
@@ -354,59 +351,59 @@ export default function AdminPage() {
 
             <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0" }}>
 
-              {/* Name */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Product Name *</label>
                 <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
                   placeholder="e.g. Apsara Pencil" style={inputStyle} />
               </div>
 
-              {/* Price + MRP */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
                   <label style={labelStyle}>Selling Price (₹) *</label>
                   <input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })}
-                    placeholder="e.g. 85" style={inputStyle} />
+                    placeholder="85" style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>MRP (₹) *</label>
                   <input type="number" value={form.mrp} onChange={e => setForm({ ...form, mrp: e.target.value })}
-                    placeholder="e.g. 100" style={inputStyle} />
+                    placeholder="100" style={inputStyle} />
                 </div>
               </div>
 
-              {/* Category */}
               <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Category *</label>
-                <input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}
-                  placeholder="e.g. Stationery, Cleaning, School Supplies" style={inputStyle} />
+                <label style={labelStyle}>Wholesale Price (₹)</label>
+                <input type="number" value={form.wholesale_price} onChange={e => setForm({ ...form, wholesale_price: e.target.value })}
+                  placeholder="e.g. 70 (optional)" style={inputStyle} />
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>Only visible to wholesale customers & store staff.</div>
               </div>
 
-              {/* Image URLs */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Categories * (comma separated for multiple)</label>
+                <input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}
+                  placeholder="e.g. Stationery, School Supplies" style={inputStyle} />
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>Add multiple categories separated by commas.</div>
+              </div>
+
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Image URLs (one per line)</label>
                 <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })}
                   placeholder={"https://example.com/image1.jpg\nhttps://example.com/image2.jpg"}
                   rows={4} style={{ ...inputStyle, resize: "vertical" as const }} />
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>Enter each image URL on a new line. Use direct image links only.</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>One direct image URL per line.</div>
               </div>
 
-              {/* Video URL */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Video URL (optional)</label>
                 <input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })}
                   placeholder="https://example.com/video.mp4" style={inputStyle} />
               </div>
 
-              {/* Keywords */}
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>Keywords (comma separated)</label>
                 <input value={form.keywords} onChange={e => setForm({ ...form, keywords: e.target.value })}
-                  placeholder="e.g. pencil, apsara, writing, school, stationery" style={inputStyle} />
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>These help customers find this product when searching.</div>
+                  placeholder="pencil, apsara, writing, school" style={inputStyle} />
               </div>
 
-              {/* Buttons */}
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={handleSave} disabled={saving} style={{
                   flex: 1, background: saving ? "#f87171" : "linear-gradient(135deg,#ef4444,#b91c1c)",
@@ -425,15 +422,13 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* ── DELETE CONFIRM MODAL ── */}
+      {/* Delete modal */}
       {deleteId && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 24,
         }}>
-          <div style={{
-            background: "#fff", borderRadius: 20, padding: 28, maxWidth: 320, width: "100%", textAlign: "center",
-          }}>
+          <div style={{ background: "#fff", borderRadius: 20, padding: 28, maxWidth: 320, width: "100%", textAlign: "center" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
             <div style={{ fontSize: 17, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>Delete Product?</div>
             <div style={{ fontSize: 13, color: "#64748b", marginBottom: 24 }}>This cannot be undone.</div>
