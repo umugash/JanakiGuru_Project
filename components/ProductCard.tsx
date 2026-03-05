@@ -392,18 +392,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             WebkitBoxOrient: "vertical", overflow: "hidden",
           }}>{product.name}</div>
 
-          {categories.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 5 }}>
-              {categories.map((cat, i) => (
-                <span key={i} style={{
-                  fontSize: 9, fontWeight: 700, color: "#dc2626",
-                  background: "#fff1f1", border: "1px solid #fca5a5",
-                  borderRadius: 6, padding: "1px 5px",
-                }}>{cat}</span>
-              ))}
-            </div>
-          )}
-
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626" }}>₹{product.price}</span>
             {product.mrp > product.price && (
