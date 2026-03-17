@@ -115,8 +115,27 @@ export default function AdminPage() {
     else { setPwError("❌ Wrong password!"); setTimeout(() => setPwError(""), 2000); }
   }
 
-  function getCatStr(cat: string | string[]) {
-    return Array.isArray(cat) ? cat.join(", ") : (cat || "");
+  function getCatStr(cat: any): string {
+    if (!cat) return "";
+    // Already array
+    if (Array.isArray(cat)) {
+      return cat.map(String).map(s => s.replace(/^["\[\]\\]+|["\[\]\\]+$/g, "").trim()).filter(Boolean).join(", ");
+    }
+    if (typeof cat === "string") {
+      let str = cat.trim().replace(/\\/g, "");
+      // Try JSON parse
+      try {
+        const parsed = JSON.parse(str);
+        if (Array.isArray(parsed)) {
+          return parsed.map(String).map(s => s.replace(/^["\[\]\\]+|["\[\]\\]+$/g, "").trim()).filter(Boolean).join(", ");
+        }
+        if (typeof parsed === "string") return parsed.trim();
+      } catch {}
+      // Strip brackets and quotes
+      str = str.replace(/^[\["']+|[\]"']+$/g, "").trim();
+      return str.split(",").map(s => s.replace(/^["'\s]+|["'\s]+$/g, "").trim()).filter(Boolean).join(", ");
+    }
+    return "";
   }
 
   function addVendor() {
@@ -169,12 +188,17 @@ export default function AdminPage() {
       .filter(v => v.name.trim() && v.price)
       .map(v => ({ name: v.name.trim(), price: Number(v.price) }));
 
-    const categoryArr = form.category.split(",").map(s => s.trim()).filter(Boolean);
+    // Always clean the category before saving
+    const categoryArr = form.category
+      .replace(/^[\["']+|[\]"']+$/g, "")  // strip outer brackets/quotes
+      .split(",")
+      .map(s => s.replace(/^["'\s\[\]\\]+|["'\s\[\]\\]+$/g, "").trim())
+      .filter(Boolean);
     const payload: any = {
       name: form.name.trim(), price: Number(form.price), mrp: Number(form.mrp),
       wholesale_price: form.wholesale_price ? Number(form.wholesale_price) : null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
-      category: categoryArr.length === 1 ? categoryArr[0] : categoryArr,
+      category: categoryArr,
       image_url: form.image_url.split("\n").map(s => s.trim()).filter(Boolean),
       video_url: form.video_url.trim() || null,
       keywords: form.keywords.split(",").map(s => s.trim()).filter(Boolean),
