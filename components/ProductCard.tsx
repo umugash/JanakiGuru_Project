@@ -40,6 +40,31 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
   const [fullscreen, setFullscreen] = useState(false);
   const [fsIndex, setFsIndex] = useState(0);
   const [fsClosing, setFsClosing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownload(e: React.MouseEvent) {
+    e.stopPropagation();
+    const url = media[fsIndex];
+    if (!url) return;
+    setDownloading(true);
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const ext = isVideo(url) ? "mp4" : "jpg";
+      const filename = product.name.replace(/[^a-z0-9]/gi, "_").toLowerCase() + "_" + (fsIndex + 1) + "." + ext;
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(url, "_blank");
+    }
+    setDownloading(false);
+  }
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockRef = useRef(false);
 
@@ -193,12 +218,17 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             <div style={{ color: "#fff", fontSize: 13, fontWeight: 700, maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {product.name}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {media.length > 1 && (
                 <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: 600 }}>
                   {fsIndex + 1} / {media.length}
                 </span>
               )}
+              <button onClick={handleDownload} disabled={downloading} style={{
+                background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)",
+                color: "#fff", borderRadius: 10, padding: "6px 10px", fontSize: 12,
+                fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+              }}>{downloading ? "⏳" : "⬇️"} {downloading ? "..." : "Save"}</button>
               <button onClick={closeFullscreen} style={{
                 background: "rgba(255,255,255,0.2)", border: "none",
                 color: "#fff", borderRadius: "50%", width: 34, height: 34,
