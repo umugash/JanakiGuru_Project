@@ -232,13 +232,19 @@ export default function AdminPage() {
     if (editId) ({ error } = await supabase.from("products").update(payload).eq("id", editId));
     else ({ error } = await supabase.from("products").insert([payload]));
 
-    if (error) { setMsg({ text: "❌ Error: " + error.message, type: "error" }); }
-    else {
+    if (error) {
+      setMsg({ text: "❌ Error: " + error.message, type: "error" });
+      setSaving(false);
+    } else {
       setMsg({ text: editId ? "✅ Updated!" : "✅ Product added!", type: "success" });
-      resetForm(); fetchProducts();
-      setTimeout(() => { setTab("products"); setMsg({ text: "", type: "" }); }, 1500);
+      fetchProducts();
+      setSaving(false);
+      setTimeout(() => {
+        resetForm();
+        setTab("products");
+        setMsg({ text: "", type: "" });
+      }, 1500);
     }
-    setSaving(false);
   }
 
   async function handleDelete(id: string) {
