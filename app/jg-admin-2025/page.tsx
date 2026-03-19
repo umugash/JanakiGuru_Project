@@ -624,7 +624,7 @@ export default function AdminPage() {
                               setCategoryInput("");
                               setShowCatDropdown(false);
                             }}
-                            style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}
+                            style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#1e293b", fontWeight: 500, borderBottom: "1px solid #f1f5f9" }}
                             onMouseEnter={e => (e.currentTarget.style.background = "#fff5f5")}
                             onMouseLeave={e => (e.currentTarget.style.background = "#fff")}
                           >
