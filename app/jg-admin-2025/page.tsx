@@ -26,6 +26,7 @@ interface StaffUser {
 
 const emptyForm = {
   name: "", price: "", mrp: "", wholesale_price: "", purchase_price: "",
+  website_price: "", barcode: "",
   category: "", image_url: "", video_url: "", keywords: "",
   short_description: "", long_description: "",
 };
@@ -42,6 +43,9 @@ export default function AdminPage() {
   const [form, setForm] = useState(emptyForm);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [editId, setEditId] = useState<string | null>(null);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [categoryInput, setCategoryInput] = useState("");
+  const [showCatDropdown, setShowCatDropdown] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState({ text: "", type: "" });
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -183,10 +187,16 @@ export default function AdminPage() {
       keywords: Array.isArray(p.keywords) ? (p.keywords as string[]).join(", ") : (p.keywords || ""),
       short_description: (p as any).short_description || "",
       long_description: (p as any).long_description || "",
+      website_price: (p as any).website_price ? String((p as any).website_price) : "",
+      barcode: (p as any).barcode || "",
     });
     // Load vendors
     const existingVendors = Array.isArray((p as any).vendors) ? (p as any).vendors : [];
     setVendors(existingVendors.map((v: any) => ({ name: v.name, price: String(v.price) })));
+    // Load categories as array
+    const cats = Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim()).filter(Boolean);
+    setSelectedCategories(cats);
+    setCategoryInput("");
     setEditId(p.id); setTab("addproduct"); setMsg({ text: "", type: "" });
     window.scrollTo(0, 0);
   }
@@ -194,13 +204,15 @@ export default function AdminPage() {
   function resetForm() {
     setForm(emptyForm);
     setVendors([]);
+    setSelectedCategories([]);
+    setCategoryInput("");
     setEditId(null);
     setMsg({ text: "", type: "" });
   }
 
   async function handleSave() {
-    if (!form.name.trim() || !form.price || !form.mrp || !form.category.trim()) {
-      setMsg({ text: "⚠ Please fill Name, Price, MRP and Category", type: "error" }); return;
+    if (!form.name.trim() || !form.price || !form.mrp || selectedCategories.length === 0) {
+      setMsg({ text: "⚠ Please fill Name, Price, MRP and at least one Category", type: "error" }); return;
     }
     setSaving(true);
 
@@ -472,17 +484,25 @@ export default function AdminPage() {
             )}
             <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0" }}>
 
-              {/* Name */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Product Name *</label>
-                <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Apsara Pencil" style={inputStyle} />
+              {/* Name + Barcode */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={labelStyle}>Product Name *</label>
+                  <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Apsara Pencil" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Barcode (optional)</label>
+                  <input value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} placeholder="Scan or type barcode" style={inputStyle} />
+                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Used for barcode scanner search</div>
+                </div>
               </div>
 
               {/* Prices */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
-                  <label style={labelStyle}>Selling Price (₹) *</label>
+                  <label style={labelStyle}>In Store Price (₹) *</label>
                   <input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} placeholder="85" style={inputStyle} />
+                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Shown to staff in wholesale app</div>
                 </div>
                 <div>
                   <label style={labelStyle}>MRP (₹) *</label>
@@ -491,14 +511,21 @@ export default function AdminPage() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
+                  <label style={labelStyle}>Website Price (₹)</label>
+                  <input type="number" value={form.website_price} onChange={e => setForm({ ...form, website_price: e.target.value })} placeholder="80" style={inputStyle} />
+                  <div style={{ fontSize: 10, color: "#2563eb", marginTop: 3 }}>Shown to online customers</div>
+                </div>
+                <div>
                   <label style={labelStyle}>Wholesale Price (₹)</label>
                   <input type="text" value={form.wholesale_price} onChange={e => setForm({ ...form, wholesale_price: e.target.value })} placeholder="70 or 70/700 for multiple" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 3 }}>Use slash for multiple: 220/2000 = Single/Bundle</div>
+                  <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 3 }}>Use slash: 220/2000 = Single/Bundle</div>
                 </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
                   <label style={labelStyle}>Purchase Price (₹)</label>
                   <input type="number" value={form.purchase_price} onChange={e => setForm({ ...form, purchase_price: e.target.value })} placeholder="60" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Staff-only</div>
+                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Staff-only (encoded)</div>
                 </div>
               </div>
 
@@ -552,10 +579,83 @@ export default function AdminPage() {
                 ))}
               </div>
 
-              {/* Category */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Categories * (comma separated)</label>
-                <input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="Stationery, School Supplies" style={inputStyle} />
+              {/* Smart Category Dropdown */}
+              <div style={{ marginBottom: 14, position: "relative" }}>
+                <label style={labelStyle}>Categories * (select or create new)</label>
+
+                {/* Selected category pills */}
+                {selectedCategories.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                    {selectedCategories.map((cat, i) => (
+                      <span key={i} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                        {cat}
+                        <button onClick={() => setSelectedCategories(prev => prev.filter((_, idx) => idx !== i))}
+                          style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Search input */}
+                <div style={{ position: "relative" }}>
+                  <input
+                    value={categoryInput}
+                    onChange={e => { setCategoryInput(e.target.value); setShowCatDropdown(true); }}
+                    onFocus={() => setShowCatDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowCatDropdown(false), 200)}
+                    placeholder="Type to search or create category..."
+                    style={inputStyle}
+                  />
+
+                  {/* Dropdown */}
+                  {showCatDropdown && (
+                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "2px solid #e2e8f0", borderRadius: 10, zIndex: 100, maxHeight: 200, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", marginTop: 2 }}>
+                      {/* Existing matching categories */}
+                      {products
+                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim()))
+                        .filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx)
+                        .filter(cat => !categoryInput || cat.toLowerCase().includes(categoryInput.toLowerCase()))
+                        .filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase()))
+                        .sort()
+                        .map((cat, i) => (
+                          <div key={i}
+                            onMouseDown={() => {
+                              setSelectedCategories(prev => [...prev, cat]);
+                              setCategoryInput("");
+                              setShowCatDropdown(false);
+                            }}
+                            style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}
+                            onMouseEnter={e => (e.currentTarget.style.background = "#fff5f5")}
+                            onMouseLeave={e => (e.currentTarget.style.background = "#fff")}
+                          >
+                            {cat}
+                          </div>
+                        ))
+                      }
+                      {/* Create new option */}
+                      {categoryInput.trim() && !products
+                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim()))
+                        .some(c => c.toLowerCase() === categoryInput.trim().toLowerCase()) &&
+                        !selectedCategories.some(s => s.toLowerCase() === categoryInput.trim().toLowerCase()) && (
+                        <div
+                          onMouseDown={() => {
+                            const newCat = categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase();
+                            setSelectedCategories(prev => [...prev, newCat]);
+                            setCategoryInput("");
+                            setShowCatDropdown(false);
+                          }}
+                          style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#16a34a", fontWeight: 600, background: "#f0fdf4", borderTop: "1px solid #e2e8f0" }}
+                        >
+                          ＋ Create "{categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase()}"
+                        </div>
+                      )}
+                      {categoryInput.trim() === "" && products.flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim())).filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx).filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase())).length === 0 && (
+                        <div style={{ padding: "10px 14px", fontSize: 12, color: "#94a3b8" }}>Type to create a new category</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Select multiple. New categories auto-capitalize.</div>
               </div>
 
               {/* Images */}
