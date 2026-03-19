@@ -228,12 +228,18 @@ export default function AdminPage() {
       vendors: vendorArr.length > 0 ? vendorArr : [],
     };
 
-    let error;
-    if (editId) ({ error } = await supabase.from("products").update(payload).eq("id", editId));
-    else ({ error } = await supabase.from("products").insert([payload]));
+    let error, data;
+    if (editId) {
+      ({ error, data } = await supabase.from("products").update(payload).eq("id", editId).select());
+    } else {
+      ({ error, data } = await supabase.from("products").insert([payload]).select());
+    }
 
     if (error) {
       setMsg({ text: "❌ Error: " + error.message, type: "error" });
+      setSaving(false);
+    } else if (!data || data.length === 0) {
+      setMsg({ text: "❌ Update blocked — RLS policy issue. Run SQL fix in Supabase.", type: "error" });
       setSaving(false);
     } else {
       setMsg({ text: editId ? "✅ Updated!" : "✅ Product added!", type: "success" });
