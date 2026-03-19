@@ -215,89 +215,44 @@ export default function AdminPage() {
       setMsg({ text: "⚠ Please fill Name, Price, MRP and at least one Category", type: "error" }); return;
     }
     setSaving(true);
+    setMsg({ text: "", type: "" });
 
-    // Build vendors array (filter out incomplete entries)
     const vendorArr = vendors
       .filter(v => v.name.trim() && v.price)
       .map(v => ({ name: v.name.trim(), price: Number(v.price) }));
 
     const payload: any = {
-      name: form.name.trim(), price: Number(form.price), mrp: Number(form.mrp),
+      name: form.name.trim(),
+      price: Number(form.price),
+      mrp: Number(form.mrp),
       wholesale_price: form.wholesale_price ? form.wholesale_price.trim() : null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
+      website_price: form.website_price ? Number(form.website_price) : null,
+      barcode: form.barcode.trim() || null,
       category: selectedCategories,
-      image_url: form.image_url.split("\n").map(s => s.trim()).filter(Boolean),
+      image_url: form.image_url.split("\n").map((s: string) => s.trim()).filter(Boolean),
       video_url: form.video_url.trim() || null,
-      keywords: form.keywords.split(",").map(s => s.trim()).filter(Boolean),
+      keywords: form.keywords.split(",").map((s: string) => s.trim()).filter(Boolean),
       short_description: form.short_description.trim() || null,
       long_description: form.long_description.trim() || null,
       vendors: vendorArr.length > 0 ? vendorArr : [],
-      website_price: form.website_price ? Number(form.website_price) : null,
-      barcode: form.barcode.trim() || null,
     };
 
-    if (editId) {
-      // Step 1: verify row exists
-      const { data: existing } = await supabase.from("products").select("id,name").eq("id", editId).single();
-      if (!existing) {
-        setMsg({ text: "❌ Row not found for id: " + editId, type: "error" });
-        setSaving(false);
-        return;
-      }
-
-      // Step 2: try minimal update first (just name) to test if update works at all
-      const { error: testErr, data: testData } = await supabase
-        .from("products")
-        .update({ name: payload.name })
-        .eq("id", editId)
-        .select("id,name");
-
-      if (testErr) {
-        setMsg({ text: "❌ Update error: " + testErr.message + " code:" + testErr.code, type: "error" });
-        setSaving(false);
-        return;
-      }
-
-      if (!testData || testData.length === 0) {
-        setMsg({ text: "❌ Update returned 0 rows. editId=" + editId + " exists=" + existing.name, type: "error" });
-        setSaving(false);
-        return;
-      }
-
-      // Step 3: full update
-      const { error: fullErr } = await supabase.from("products").update(payload).eq("id", editId);
-      if (fullErr) {
-        setMsg({ text: "❌ Full update error: " + fullErr.message, type: "error" });
-        setSaving(false);
-        return;
-      }
-    } else {
-      const { error: insErr } = await supabase.from("products").insert([payload]);
-      if (insErr) {
-        setMsg({ text: "❌ Insert error: " + insErr.message, type: "error" });
-        setSaving(false);
-        return;
-      }
-    }
-
-    {
-      const error = null;
-      const data = [1]; // dummy to pass check
-      if (error) {
-        setMsg({ text: "❌ Error", type: "error" });
-        setSaving(false);
-      } else if (!data || data.length === 0) {
-        setMsg({ text: "❌ Unknown failure", type: "error" });
-        setSaving(false);
+    try {
+      if (editId) {
+        const { error } = await supabase.from("products").update(payload).eq("id", editId);
+        if (error) throw error;
       } else {
+        const { error } = await supabase.from("products").insert([payload]);
+        if (error) throw error;
+      }
       setMsg({ text: editId ? "✅ Updated!" : "✅ Product added!", type: "success" });
       fetchProducts();
       setSaving(false);
-      setTimeout(() => {
-        resetForm();
-        setTab("products");
-        setMsg({ text: "", type: "" });
-      }, 1500);
+      setTimeout(() => { resetForm(); setTab("products"); setMsg({ text: "", type: "" }); }, 1500);
+    } catch (err: any) {
+      setMsg({ text: "❌ " + (err?.message || "Unknown error"), type: "error" });
+      setSaving(false);
     }
   }
 
