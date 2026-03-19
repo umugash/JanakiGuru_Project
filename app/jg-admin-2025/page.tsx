@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 const ADMIN_PASSWORD = "janaki@admin2025";
-type Tab = "products" | "orders" | "staff" | "addproduct";
+type Tab = "products" | "orders" | "staff" | "addproduct" | "settings";
 
 interface Vendor { name: string; price: string; }
 
@@ -52,6 +52,11 @@ export default function AdminPage() {
   const [staffMsg, setStaffMsg] = useState({ text: "", type: "" });
   const [showStaffForm, setShowStaffForm] = useState(false);
   const [showStaffPassword, setShowStaffPassword] = useState<string | null>(null);
+  // Cipher settings
+  const [cipherKey, setCipherKey] = useState("ROYALTIMES");
+  const [cipherInput, setCipherInput] = useState("");
+  const [cipherMsg, setCipherMsg] = useState({ text: "", type: "" });
+  const [cipherLoading, setCipherLoading] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -59,7 +64,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (authed) { fetchProducts(); fetchOrders(); fetchStaff(); }
+    if (authed) { fetchProducts(); fetchOrders(); fetchStaff(); fetchCipherKey(); }
   }, [authed]);
 
   async function fetchProducts() {
@@ -73,6 +78,22 @@ export default function AdminPage() {
   async function fetchStaff() {
     const { data } = await supabase.from("staff_users").select("*").order("created_at", { ascending: false });
     if (data) setStaffUsers(data);
+  }
+
+  async function fetchCipherKey() {
+    const { data } = await supabase.from("cipher_settings").select("cipher_key").eq("id", 1).single();
+    if (data?.cipher_key) { setCipherKey(data.cipher_key.toUpperCase()); setCipherInput(data.cipher_key.toUpperCase()); }
+  }
+
+  async function saveCipherKey() {
+    const key = cipherInput.trim().toUpperCase();
+    if (key.length !== 10) { setCipherMsg({ text: "❌ Key must be exactly 10 characters (one per digit 0-9)", type: "error" }); return; }
+    if (new Set(key).size !== 10) { setCipherMsg({ text: "❌ All 10 characters must be unique", type: "error" }); return; }
+    setCipherLoading(true);
+    const { error } = await supabase.from("cipher_settings").update({ cipher_key: key }).eq("id", 1);
+    if (error) setCipherMsg({ text: "❌ Failed to save: " + error.message, type: "error" });
+    else { setCipherKey(key); setCipherMsg({ text: "✅ Cipher key updated! Staff will see new codes on next app open.", type: "success" }); }
+    setCipherLoading(false);
   }
 
   async function handleSaveStaff() {
@@ -196,7 +217,7 @@ export default function AdminPage() {
       .filter(Boolean);
     const payload: any = {
       name: form.name.trim(), price: Number(form.price), mrp: Number(form.mrp),
-      wholesale_price: form.wholesale_price ? Number(form.wholesale_price) : null,
+      wholesale_price: form.wholesale_price ? form.wholesale_price.trim() : null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
       category: categoryArr,
       image_url: form.image_url.split("\n").map(s => s.trim()).filter(Boolean),
@@ -265,6 +286,7 @@ export default function AdminPage() {
           { key: "orders", label: `🛒 Orders (${orders.length})` },
           { key: "staff", label: `👥 Staff (${activeStaff.length})` },
           { key: "addproduct", label: editId ? "✏️ Edit" : "➕ Add" },
+          { key: "settings", label: "⚙️ Settings" },
         ] as { key: Tab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); if (t.key !== "addproduct") resetForm(); }} style={{
             flex: 1, padding: "11px 4px", border: "none", background: "none",
@@ -458,7 +480,8 @@ export default function AdminPage() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
                   <label style={labelStyle}>Wholesale Price (₹)</label>
-                  <input type="number" value={form.wholesale_price} onChange={e => setForm({ ...form, wholesale_price: e.target.value })} placeholder="70" style={inputStyle} />
+                  <input type="text" value={form.wholesale_price} onChange={e => setForm({ ...form, wholesale_price: e.target.value })} placeholder="70 or 70/700 for multiple" style={inputStyle} />
+                  <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 3 }}>Use slash for multiple: 220/2000 = Single/Bundle</div>
                 </div>
                 <div>
                   <label style={labelStyle}>Purchase Price (₹)</label>
@@ -576,6 +599,62 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+        {/* ── SETTINGS ── */}
+        {tab === "settings" && (
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>⚙️ Settings</div>
+
+            {/* Cipher Key Section */}
+            <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", marginBottom: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>🔐 ROYALTIMES Cipher Key</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
+                This 10-character key encodes W/S and Purchase prices in the app. Each character represents a digit (0-9). Default: <strong>ROYALTIMES</strong>
+                <br/>R=1, O=2, Y=3, A=4, L=5, T=6, I=7, M=8, E=9, S=0
+              </div>
+
+              <div style={{ background: "#f8f4ff", borderRadius: 10, padding: 12, marginBottom: 14, border: "1px solid #e9d5ff" }}>
+                <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 700, marginBottom: 6 }}>CURRENT KEY</div>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {cipherKey.split("").map((ch, i) => (
+                    <div key={i} style={{ background: "#7c3aed", color: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 800, textAlign: "center", minWidth: 32 }}>
+                      <div style={{ fontSize: 9, opacity: 0.8 }}>{i}</div>
+                      <div>{ch}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {cipherMsg.text && (
+                <div style={{ background: cipherMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${cipherMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: cipherMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 12 }}>{cipherMsg.text}</div>
+              )}
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>New Cipher Key (exactly 10 unique characters)</label>
+                <input
+                  value={cipherInput}
+                  onChange={e => { setCipherInput(e.target.value.toUpperCase()); setCipherMsg({ text: "", type: "" }); }}
+                  placeholder="ROYALTIMES"
+                  maxLength={10}
+                  style={{ ...inputStyle, fontFamily: "monospace", fontSize: 18, letterSpacing: 4, textTransform: "uppercase" }}
+                />
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
+                  {cipherInput.length}/10 characters
+                  {cipherInput.length === 10 && new Set(cipherInput).size === 10 && <span style={{ color: "#16a34a", marginLeft: 8 }}>✅ Valid key</span>}
+                  {cipherInput.length === 10 && new Set(cipherInput).size !== 10 && <span style={{ color: "#dc2626", marginLeft: 8 }}>❌ Duplicate characters</span>}
+                </div>
+              </div>
+
+              <button onClick={saveCipherKey} disabled={cipherLoading} style={{ width: "100%", background: cipherLoading ? "#a78bfa" : "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff", border: "none", borderRadius: 12, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                {cipherLoading ? "Saving..." : "🔐 Update Cipher Key"}
+              </button>
+
+              <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
+                ⚠️ After changing, staff will see new codes when they reopen the app
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Delete modal */}
       {deleteId && (
