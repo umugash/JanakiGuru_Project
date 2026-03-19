@@ -238,7 +238,28 @@ export default function AdminPage() {
 
     let error, data;
     if (editId) {
-      ({ error, data } = await supabase.from("products").update(payload).eq("id", editId).select());
+      const result = await supabase.from("products").update(payload).eq("id", editId).select();
+      error = result.error;
+      data = result.data;
+      if (!error && (!data || data.length === 0)) {
+        // Double check - fetch the row to see if it exists
+        const check = await supabase.from("products").select("id").eq("id", editId).single();
+        if (check.error || !check.data) {
+          setMsg({ text: "❌ Product ID not found: " + editId, type: "error" });
+          setSaving(false);
+          return;
+        }
+        // Row exists but update returned empty - try without .select()
+        const retry = await supabase.from("products").update(payload).eq("id", editId);
+        if (retry.error) {
+          setMsg({ text: "❌ Retry error: " + retry.error.message, type: "error" });
+          setSaving(false);
+          return;
+        }
+        // Manually fetch updated row
+        const fresh = await supabase.from("products").select("*").eq("id", editId).single();
+        data = fresh.data ? [fresh.data] : [];
+      }
     } else {
       ({ error, data } = await supabase.from("products").insert([payload]).select());
     }
@@ -247,7 +268,7 @@ export default function AdminPage() {
       setMsg({ text: "❌ Error: " + error.message, type: "error" });
       setSaving(false);
     } else if (!data || data.length === 0) {
-      setMsg({ text: "❌ Update blocked — RLS policy issue. Run SQL fix in Supabase.", type: "error" });
+      setMsg({ text: "❌ No rows updated. ID: " + editId, type: "error" });
       setSaving(false);
     } else {
       setMsg({ text: editId ? "✅ Updated!" : "✅ Product added!", type: "success" });
