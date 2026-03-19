@@ -221,23 +221,19 @@ export default function AdminPage() {
       .filter(v => v.name.trim() && v.price)
       .map(v => ({ name: v.name.trim(), price: Number(v.price) }));
 
-    // Always clean the category before saving
-    const categoryArr = form.category
-      .replace(/^[\["']+|[\]"']+$/g, "")  // strip outer brackets/quotes
-      .split(",")
-      .map(s => s.replace(/^["'\s\[\]\\]+|["'\s\[\]\\]+$/g, "").trim())
-      .filter(Boolean);
     const payload: any = {
       name: form.name.trim(), price: Number(form.price), mrp: Number(form.mrp),
       wholesale_price: form.wholesale_price ? form.wholesale_price.trim() : null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
-      category: categoryArr,
+      category: selectedCategories,
       image_url: form.image_url.split("\n").map(s => s.trim()).filter(Boolean),
       video_url: form.video_url.trim() || null,
       keywords: form.keywords.split(",").map(s => s.trim()).filter(Boolean),
       short_description: form.short_description.trim() || null,
       long_description: form.long_description.trim() || null,
       vendors: vendorArr.length > 0 ? vendorArr : [],
+      website_price: form.website_price ? Number(form.website_price) : null,
+      barcode: form.barcode.trim() || null,
     };
 
     let error, data;
