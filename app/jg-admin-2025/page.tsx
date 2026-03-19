@@ -610,7 +610,7 @@ export default function AdminPage() {
               <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>🔐 ROYALTIMES Cipher Key</div>
               <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
                 This 10-character key encodes W/S and Purchase prices in the app. Each character represents a digit (0-9). Default: <strong>ROYALTIMES</strong>
-                <br/>R=1, O=2, Y=3, A=4, L=5, T=6, I=7, M=8, E=9, S=0
+                <br/>1=R, 2=O, 3=Y, 4=A, 5=L, 6=T, 7=I, 8=M, 9=E, 0=S
               </div>
 
               <div style={{ background: "#f8f4ff", borderRadius: 10, padding: 12, marginBottom: 14, border: "1px solid #e9d5ff" }}>
@@ -618,7 +618,7 @@ export default function AdminPage() {
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                   {cipherKey.split("").map((ch, i) => (
                     <div key={i} style={{ background: "#7c3aed", color: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 800, textAlign: "center", minWidth: 32 }}>
-                      <div style={{ fontSize: 9, opacity: 0.8 }}>{i}</div>
+                      <div style={{ fontSize: 9, opacity: 0.8 }}>{(i + 1) % 10}</div>
                       <div>{ch}</div>
                     </div>
                   ))}
