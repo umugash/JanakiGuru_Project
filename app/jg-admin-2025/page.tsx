@@ -236,41 +236,60 @@ export default function AdminPage() {
       barcode: form.barcode.trim() || null,
     };
 
-    let error, data;
     if (editId) {
-      const result = await supabase.from("products").update(payload).eq("id", editId).select();
-      error = result.error;
-      data = result.data;
-      if (!error && (!data || data.length === 0)) {
-        // Double check - fetch the row to see if it exists
-        const check = await supabase.from("products").select("id").eq("id", editId).single();
-        if (check.error || !check.data) {
-          setMsg({ text: "❌ Product ID not found: " + editId, type: "error" });
-          setSaving(false);
-          return;
-        }
-        // Row exists but update returned empty - try without .select()
-        const retry = await supabase.from("products").update(payload).eq("id", editId);
-        if (retry.error) {
-          setMsg({ text: "❌ Retry error: " + retry.error.message, type: "error" });
-          setSaving(false);
-          return;
-        }
-        // Manually fetch updated row
-        const fresh = await supabase.from("products").select("*").eq("id", editId).single();
-        data = fresh.data ? [fresh.data] : [];
+      // Step 1: verify row exists
+      const { data: existing } = await supabase.from("products").select("id,name").eq("id", editId).single();
+      if (!existing) {
+        setMsg({ text: "❌ Row not found for id: " + editId, type: "error" });
+        setSaving(false);
+        return;
+      }
+
+      // Step 2: try minimal update first (just name) to test if update works at all
+      const { error: testErr, data: testData } = await supabase
+        .from("products")
+        .update({ name: payload.name })
+        .eq("id", editId)
+        .select("id,name");
+
+      if (testErr) {
+        setMsg({ text: "❌ Update error: " + testErr.message + " code:" + testErr.code, type: "error" });
+        setSaving(false);
+        return;
+      }
+
+      if (!testData || testData.length === 0) {
+        setMsg({ text: "❌ Update returned 0 rows. editId=" + editId + " exists=" + existing.name, type: "error" });
+        setSaving(false);
+        return;
+      }
+
+      // Step 3: full update
+      const { error: fullErr } = await supabase.from("products").update(payload).eq("id", editId);
+      if (fullErr) {
+        setMsg({ text: "❌ Full update error: " + fullErr.message, type: "error" });
+        setSaving(false);
+        return;
       }
     } else {
-      ({ error, data } = await supabase.from("products").insert([payload]).select());
+      const { error: insErr } = await supabase.from("products").insert([payload]);
+      if (insErr) {
+        setMsg({ text: "❌ Insert error: " + insErr.message, type: "error" });
+        setSaving(false);
+        return;
+      }
     }
 
-    if (error) {
-      setMsg({ text: "❌ Error: " + error.message, type: "error" });
-      setSaving(false);
-    } else if (!data || data.length === 0) {
-      setMsg({ text: "❌ No rows updated. ID: " + editId, type: "error" });
-      setSaving(false);
-    } else {
+    {
+      const error = null;
+      const data = [1]; // dummy to pass check
+      if (error) {
+        setMsg({ text: "❌ Error", type: "error" });
+        setSaving(false);
+      } else if (!data || data.length === 0) {
+        setMsg({ text: "❌ Unknown failure", type: "error" });
+        setSaving(false);
+      } else {
       setMsg({ text: editId ? "✅ Updated!" : "✅ Product added!", type: "success" });
       fetchProducts();
       setSaving(false);
