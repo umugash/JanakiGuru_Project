@@ -38,6 +38,7 @@ export default function AdminPage() {
   const [pwError, setPwError] = useState("");
   const [tab, setTab] = useState<Tab>("products");
   const [products, setProducts] = useState<Product[]>([]);
+  const [adminSearch, setAdminSearch] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [form, setForm] = useState(emptyForm);
@@ -261,6 +262,17 @@ export default function AdminPage() {
     fetchProducts(); setDeleteId(null);
   }
 
+  const filteredAdminProducts = products.filter(p => {
+    if (!adminSearch.trim()) return true;
+    const q = adminSearch.toLowerCase();
+    const nameMatch = p.name?.toLowerCase().includes(q);
+    const barcodeMatch = (p as any).barcode?.toLowerCase().includes(q);
+    const keywordMatch = Array.isArray(p.keywords)
+      ? (p.keywords as string[]).some(k => k.toLowerCase().includes(q))
+      : String(p.keywords || "").toLowerCase().includes(q);
+    return nameMatch || barcodeMatch || keywordMatch;
+  });
+
   const activeStaff = staffUsers.filter(s => s.status === "active");
   const revokedStaff = staffUsers.filter(s => s.status === "revoked");
 
@@ -317,12 +329,25 @@ export default function AdminPage() {
         {/* ── PRODUCTS ── */}
         {tab === "products" && (
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>All Products</div>
               <button onClick={() => { resetForm(); setTab("addproduct"); }} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Add New</button>
             </div>
+            <div style={{ position: "relative", marginBottom: 12 }}>
+              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14 }}>🔍</span>
+              <input
+                value={adminSearch}
+                onChange={e => setAdminSearch(e.target.value)}
+                placeholder="Search by name, barcode or keyword..."
+                style={{ width: "100%", border: "2px solid #e2e8f0", borderRadius: 10, padding: "9px 12px 9px 36px", fontSize: 13, fontFamily: "system-ui,sans-serif", color: "#1e293b", background: "#f8fafc", outline: "none", boxSizing: "border-box" as const }}
+              />
+              {adminSearch && (
+                <button onClick={() => setAdminSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", fontSize: 16, color: "#94a3b8", cursor: "pointer" }}>✕</button>
+              )}
+            </div>
+            {adminSearch && <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{filteredAdminProducts.length} result{filteredAdminProducts.length !== 1 ? "s" : ""} found</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {products.map(p => (
+              {filteredAdminProducts.map(p => (
                 <div key={p.id} style={{ background: "#fff", borderRadius: 14, padding: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", background: "#fff5f5", flexShrink: 0, border: "1px solid #fee2e2" }}>
                     {p.image_url?.[0] ? <img src={p.image_url[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>}
@@ -480,7 +505,7 @@ export default function AdminPage() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
                   <label style={labelStyle}>Product Name *</label>
-                  <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Apsara Pencil" style={inputStyle} />
+                  <input value={form.name} onChange={e => { const v = e.target.value; setForm({ ...form, name: v.charAt(0).toUpperCase() + v.slice(1) }); }} placeholder="e.g. Apsara Pencil" style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Barcode (optional)</label>
