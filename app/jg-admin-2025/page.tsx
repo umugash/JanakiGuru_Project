@@ -215,6 +215,8 @@ export default function AdminPage() {
       setMsg({ text: "⚠ Please fill Name, Price, MRP and at least one Category", type: "error" }); return;
     }
     setSaving(true);
+    setMsg({ text: "Saving barcode: [" + form.barcode + "]", type: "" });
+    await new Promise(r => setTimeout(r, 1500)); // show msg for 1.5s
     setMsg({ text: "", type: "" });
 
     const vendorArr = vendors
