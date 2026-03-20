@@ -68,8 +68,9 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockRef = useRef(false);
 
-  const discount = product.mrp > product.price
-    ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
+  const displayPrice = (product as any).website_price || product.price;
+  const discount = product.mrp > displayPrice
+    ? Math.round(((product.mrp - displayPrice) / product.mrp) * 100)
     : 0;
 
   const categories = Array.isArray(product.category)
@@ -423,8 +424,8 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
           }}>{product.name}</div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626" }}>₹{product.price}</span>
-            {product.mrp > product.price && (
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626" }}>₹{displayPrice}</span>
+            {product.mrp > displayPrice && (
               <span style={{ fontSize: 10, color: "#9ca3af", textDecoration: "line-through" }}>₹{product.mrp}</span>
             )}
           </div>
