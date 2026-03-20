@@ -1,783 +1,583 @@
 "use client";
+import { useState, useEffect, useRef, useCallback } from "react";
+import ProductCard from "./ProductCard";
+import StaffLogin from "./StaffLogin";
+import { encodePrice, encodeWholesalePrices, parseWholesalePrices, setCachedKey, getCachedKey } from "@/lib/cipher";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-
-const ADMIN_PASSWORD = "janaki@admin2025";
-type Tab = "products" | "orders" | "staff" | "addproduct" | "settings";
-
-interface Vendor { name: string; price: string; }
-
-interface Product {
-  id: string; name: string; price: number; mrp: number;
-  wholesale_price?: number; purchase_price?: number;
-  category: string | string[]; image_url: string[];
-  video_url?: string; keywords: string | string[];
-  short_description?: string; long_description?: string;
-  vendors?: { name: string; price: number }[];
-}
-interface Order {
-  id: string; customer_name: string; phone: string; address: string;
-  items: any[]; total_amount: number; created_at: string;
-}
-interface StaffUser {
-  id: string; name: string; password: string; status: string; created_at: string;
+function isVideo(url: string) {
+  return !!(url?.match(/\.(mp4|webm|ogg|mov)$/i) || url?.includes("video"));
 }
 
-const emptyForm = {
-  name: "", price: "", mrp: "", wholesale_price: "", purchase_price: "",
-  website_price: "", barcode: "",
-  category: "", image_url: "", video_url: "", keywords: "",
-  short_description: "", long_description: "",
-};
-const emptyStaffForm = { name: "", password: "" };
+function parseCategories(val: any): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) {
+    return val.flatMap((v: any) => parseCategories(v)).filter(Boolean);
+  }
+  if (typeof val === "string") {
+    let str = val.trim().replace(/\\/g, "");
+    try {
+      const parsed = JSON.parse(str);
+      if (Array.isArray(parsed)) return parsed.flatMap((v: any) => parseCategories(v)).filter(Boolean);
+      if (typeof parsed === "string") return [parsed.trim()].filter(Boolean);
+    } catch {}
+    str = str.replace(/^[\["']+|[\]"']+$/g, "").trim();
+    return str.split(",").map((s: string) => s.replace(/^["'\s\[\]\\]+|["'\s\[\]\\]+$/g, "").trim()).filter(Boolean);
+  }
+  return [];
+}
 
-export default function AdminPage() {
-  const [authed, setAuthed] = useState(false);
-  const [pw, setPw] = useState("");
-  const [pwError, setPwError] = useState("");
-  const [tab, setTab] = useState<Tab>("products");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
-  const [form, setForm] = useState(emptyForm);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [categoryInput, setCategoryInput] = useState("");
-  const [showCatDropdown, setShowCatDropdown] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState({ text: "", type: "" });
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [expandOrder, setExpandOrder] = useState<string | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
-  const [staffForm, setStaffForm] = useState(emptyStaffForm);
-  const [staffEditId, setStaffEditId] = useState<string | null>(null);
-  const [staffMsg, setStaffMsg] = useState({ text: "", type: "" });
-  const [showStaffForm, setShowStaffForm] = useState(false);
-  const [showStaffPassword, setShowStaffPassword] = useState<string | null>(null);
-  // Cipher settings
+// IndexedDB helpers
+const DB_NAME = "jg_wholesale_cache";
+const DB_VERSION = 1;
+const STORE_NAME = "products";
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = (e.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "id" });
+    };
+    req.onsuccess = e => resolve((e.target as IDBOpenDBRequest).result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveProductsToDB(products: any[]) {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+  store.clear();
+  products.forEach(p => store.put(p));
+}
+
+async function getProductsFromDB(): Promise<any[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function pricePill(bg: string): React.CSSProperties {
+  return {
+    display: "inline-block", background: bg, color: "#fff",
+    borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 700,
+    whiteSpace: "nowrap" as const,
+  };
+}
+
+interface Props {
+  staff: any;
+  showLogin: boolean;
+  onShowLogin: () => void;
+  onHideLogin: () => void;
+  onStaffChange: (s: any) => void;
+  onLogout: () => void;
+}
+
+export default function ProductGrid({ staff, showLogin, onShowLogin, onHideLogin, onStaffChange, onLogout }: Props) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
+  const [debugMsg, setDebugMsg] = useState("");
   const [cipherKey, setCipherKey] = useState("ROYALTIMES");
-  const [cipherInput, setCipherInput] = useState("");
-  const [cipherMsg, setCipherMsg] = useState({ text: "", type: "" });
-  const [cipherLoading, setCipherLoading] = useState(false);
+
+  // Fullscreen
+  const [fsProduct, setFsProduct] = useState<any>(null);
+  const [fsIndex, setFsIndex] = useState(0);
+  const [fsClosing, setFsClosing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  // Barcode scanner
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState("");
+  const [scannerLoading, setScannerLoading] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const scannerRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    setIsMounted(true);
-    if (typeof window !== "undefined" && sessionStorage.getItem("jg_admin") === "1") setAuthed(true);
+    import("@/lib/supabase").then(({ supabase }) => {
+      loadProducts(supabase);
+      loadCipherKey(supabase);
+    });
+
+    // Only trust browser's navigator.onLine for the banner
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    // Check actual connectivity
+    setIsOffline(!navigator.onLine);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  async function loadCipherKey(supabase: any) {
+    try {
+      const { data } = await supabase.from("cipher_settings").select("cipher_key").eq("id", 1).single();
+      if (data?.cipher_key) {
+        setCipherKey(data.cipher_key.toUpperCase());
+        setCachedKey(data.cipher_key.toUpperCase());
+      }
+    } catch {}
+  }
+
+  async function loadProducts(supabase: any) {
+    setLoading(true);
+
+    // Always try Supabase FIRST
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id,name,mrp,price,wholesale_price,purchase_price,category,image_url,video_url,keywords,created_at,short_description,long_description,vendors,barcode")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        // Show exact Supabase error so we can debug
+        setIsOffline(true);
+        setDebugMsg("Supabase error: " + error.message + " | code: " + error.code);
+        const cached = await getProductsFromDB().catch(() => []);
+        if (cached.length > 0) setProducts(cached);
+        setLoading(false);
+        return;
+      }
+
+      if (data && data.length >= 0) {
+        setProducts(data);
+        setIsOffline(false);
+        setDebugMsg("");
+        await saveProductsToDB(data);
+        setLoading(false);
+        return;
+      }
+    } catch (err: any) {
+      setDebugMsg("Fetch exception: " + (err?.message || String(err)));
+    }
+
+    // Fall back to cache
+    try {
+      const cached = await getProductsFromDB();
+      if (cached.length > 0) { setProducts(cached); setIsOffline(true); }
+      else setProducts([]);
+    } catch { setProducts([]); }
+    setLoading(false);
+  }
+
+  // Barcode scanner - uses canvas + BarcodeDetector (most reliable on Android)
+  async function openScanner() {
+    setScannerOpen(true);
+    setScannerError("");
+    setScannerLoading(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setScannerLoading(false);
+      startCanvasDetector();
+    } catch {
+      setScannerError("Camera access denied. Please allow camera permission and try again.");
+      setScannerLoading(false);
+    }
+  }
+
+  function startCanvasDetector() {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    let scanning = true;
+    let frameCount = 0;
+
+    const hasBarcodeDetector = "BarcodeDetector" in window;
+    let detector: any = null;
+    if (hasBarcodeDetector) {
+      detector = new (window as any).BarcodeDetector({
+        formats: ["ean_13", "ean_8", "qr_code", "code_128", "code_39", "upc_a", "upc_e", "itf", "codabar", "aztec", "data_matrix"]
+      });
+    }
+
+    const scan = async () => {
+      if (!scanning || !videoRef.current || !ctx) return;
+      if (videoRef.current.readyState < 2) {
+        // Video not ready yet
+        setTimeout(scan, 200);
+        return;
+      }
+
+      frameCount++;
+      // Process every 3rd frame to save CPU
+      if (frameCount % 3 !== 0) {
+        requestAnimationFrame(scan);
+        return;
+      }
+
+      canvas.width = videoRef.current.videoWidth || 640;
+      canvas.height = videoRef.current.videoHeight || 480;
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+
+      try {
+        if (hasBarcodeDetector && detector) {
+          // Use native BarcodeDetector on canvas
+          const barcodes = await detector.detect(canvas);
+          if (barcodes.length > 0) {
+            scanning = false;
+            handleBarcodeResult(barcodes[0].rawValue);
+            return;
+          }
+        }
+      } catch {}
+
+      if (scanning) requestAnimationFrame(scan);
+    };
+
+    // Start scanning after short delay to let camera warm up
+    setTimeout(() => requestAnimationFrame(scan), 500);
+    scannerRef.current = { stop: () => { scanning = false; } };
+  }
+
+  function handleBarcodeResult(barcode: string) {
+    closeScanner();
+    // Search by barcode field exactly
+    const found = products.find(p => p.barcode && p.barcode.trim() === barcode.trim());
+    if (found) {
+      // Direct match — show only this product
+      setSearch(found.name);
+      setActiveCategory("All");
+    } else {
+      // Not found — show barcode in search so user sees "no results" with barcode
+      setSearch(barcode);
+      setActiveCategory("All");
+    }
+  }
+
+  function closeScanner() {
+    if (scannerRef.current?.stop) scannerRef.current.stop();
+    if (scannerRef.current?.reset) scannerRef.current.reset();
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    setScannerOpen(false);
+    setScannerError("");
+  }
+
+  // Fullscreen
+  const openFullscreen = (product: any, index: number) => {
+    setFsProduct(product);
+    setFsIndex(index);
+    setFsClosing(false);
+    document.body.style.overflow = "hidden";
+    window.history.pushState({ fullscreen: true }, "");
+  };
+
+  const closeFullscreen = useCallback(() => {
+    setFsClosing(true);
+    setTimeout(() => {
+      setFsProduct(null);
+      setFsClosing(false);
+      document.body.style.overflow = "";
+    }, 280);
   }, []);
 
   useEffect(() => {
-    if (authed) { fetchProducts(); fetchOrders(); fetchStaff(); fetchCipherKey(); }
-  }, [authed]);
-
-  async function fetchProducts() {
-    const { data } = await supabase.from("products").select("*").order("name");
-    if (data) setProducts(data);
-  }
-  async function fetchOrders() {
-    const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
-    if (data) setOrders(data);
-  }
-  async function fetchStaff() {
-    const { data } = await supabase.from("staff_users").select("*").order("created_at", { ascending: false });
-    if (data) setStaffUsers(data);
-  }
-
-  async function fetchCipherKey() {
-    const { data } = await supabase.from("cipher_settings").select("cipher_key").eq("id", 1).single();
-    if (data?.cipher_key) { setCipherKey(data.cipher_key.toUpperCase()); setCipherInput(data.cipher_key.toUpperCase()); }
-  }
-
-  async function saveCipherKey() {
-    const key = cipherInput.trim().toUpperCase();
-    if (key.length !== 10) { setCipherMsg({ text: "❌ Key must be exactly 10 characters (one per digit 0-9)", type: "error" }); return; }
-    if (new Set(key).size !== 10) { setCipherMsg({ text: "❌ All 10 characters must be unique", type: "error" }); return; }
-    setCipherLoading(true);
-    const { error } = await supabase.from("cipher_settings").update({ cipher_key: key }).eq("id", 1);
-    if (error) setCipherMsg({ text: "❌ Failed to save: " + error.message, type: "error" });
-    else { setCipherKey(key); setCipherMsg({ text: "✅ Cipher key updated! Staff will see new codes on next app open.", type: "success" }); }
-    setCipherLoading(false);
-  }
-
-  async function handleSaveStaff() {
-    if (!staffForm.name.trim() || !staffForm.password.trim()) {
-      setStaffMsg({ text: "⚠ Please enter both name and password", type: "error" }); return;
-    }
-    setSaving(true);
-    setStaffMsg({ text: "", type: "" });
-    const payload = { name: staffForm.name.trim(), password: staffForm.password.trim(), status: "active" };
-    let error;
-    if (staffEditId) {
-      ({ error } = await supabase.from("staff_users").update(payload).eq("id", staffEditId));
-    } else {
-      ({ error } = await supabase.from("staff_users").insert([payload]));
-    }
-    if (error) setStaffMsg({ text: "❌ " + error.message, type: "error" });
-    else {
-      setStaffMsg({ text: staffEditId ? "✅ Updated!" : "✅ Staff added!", type: "success" });
-      setStaffForm(emptyStaffForm); setStaffEditId(null); setShowStaffForm(false);
-      fetchStaff();
-    }
-    setSaving(false);
-  }
-
-  async function revokeStaff(id: string) {
-    await supabase.from("staff_users").update({ status: "revoked" }).eq("id", id);
-    fetchStaff();
-  }
-  async function reactivateStaff(id: string) {
-    await supabase.from("staff_users").update({ status: "active" }).eq("id", id);
-    fetchStaff();
-  }
-  async function deleteStaffUser(id: string) {
-    await supabase.from("staff_users").delete().eq("id", id);
-    fetchStaff();
-  }
-
-  function handleLogin() {
-    if (pw === ADMIN_PASSWORD) { sessionStorage.setItem("jg_admin", "1"); setAuthed(true); }
-    else { setPwError("❌ Wrong password!"); setTimeout(() => setPwError(""), 2000); }
-  }
-
-  function getCatStr(cat: any): string {
-    if (!cat) return "";
-    // Already array
-    if (Array.isArray(cat)) {
-      return cat.map(String).map(s => s.replace(/^["\[\]\\]+|["\[\]\\]+$/g, "").trim()).filter(Boolean).join(", ");
-    }
-    if (typeof cat === "string") {
-      let str = cat.trim().replace(/\\/g, "");
-      // Try JSON parse
-      try {
-        const parsed = JSON.parse(str);
-        if (Array.isArray(parsed)) {
-          return parsed.map(String).map(s => s.replace(/^["\[\]\\]+|["\[\]\\]+$/g, "").trim()).filter(Boolean).join(", ");
-        }
-        if (typeof parsed === "string") return parsed.trim();
-      } catch {}
-      // Strip brackets and quotes
-      str = str.replace(/^[\["']+|[\]"']+$/g, "").trim();
-      return str.split(",").map(s => s.replace(/^["'\s]+|["'\s]+$/g, "").trim()).filter(Boolean).join(", ");
-    }
-    return "";
-  }
-
-  function addVendor() {
-    if (vendors.length >= 5) return;
-    setVendors(v => [...v, { name: "", price: "" }]);
-  }
-
-  function removeVendor(index: number) {
-    setVendors(v => v.filter((_, i) => i !== index));
-  }
-
-  function updateVendor(index: number, field: "name" | "price", value: string) {
-    setVendors(v => v.map((vendor, i) => i === index ? { ...vendor, [field]: value } : vendor));
-  }
-
-  function startEdit(p: Product) {
-    setForm({
-      name: p.name, price: String(p.price), mrp: String(p.mrp),
-      wholesale_price: p.wholesale_price ? String(p.wholesale_price) : "",
-      purchase_price: p.purchase_price ? String(p.purchase_price) : "",
-      category: getCatStr(p.category),
-      image_url: Array.isArray(p.image_url) ? p.image_url.join("\n") : "",
-      video_url: p.video_url || "",
-      keywords: Array.isArray(p.keywords) ? (p.keywords as string[]).join(", ") : (p.keywords || ""),
-      short_description: (p as any).short_description || "",
-      long_description: (p as any).long_description || "",
-      website_price: (p as any).website_price ? String((p as any).website_price) : "",
-      barcode: (p as any).barcode || "",
-    });
-    // Load vendors
-    const existingVendors = Array.isArray((p as any).vendors) ? (p as any).vendors : [];
-    setVendors(existingVendors.map((v: any) => ({ name: v.name, price: String(v.price) })));
-    // Load categories as array
-    const cats = Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim()).filter(Boolean);
-    setSelectedCategories(cats);
-    setCategoryInput("");
-    setEditId(p.id); setTab("addproduct"); setMsg({ text: "", type: "" });
-    window.scrollTo(0, 0);
-  }
-
-  function resetForm() {
-    setForm(emptyForm);
-    setVendors([]);
-    setSelectedCategories([]);
-    setCategoryInput("");
-    setEditId(null);
-    setMsg({ text: "", type: "" });
-  }
-
-  async function handleSave() {
-    if (!form.name.trim() || !form.price || !form.mrp || selectedCategories.length === 0) {
-      setMsg({ text: "⚠ Please fill Name, Price, MRP and at least one Category", type: "error" }); return;
-    }
-    setSaving(true);
-    setMsg({ text: "Saving barcode: [" + form.barcode + "]", type: "" });
-    await new Promise(r => setTimeout(r, 1500)); // show msg for 1.5s
-    setMsg({ text: "", type: "" });
-
-    const vendorArr = vendors
-      .filter(v => v.name.trim() && v.price)
-      .map(v => ({ name: v.name.trim(), price: Number(v.price) }));
-
-    const payload: any = {
-      name: form.name.trim(),
-      price: Number(form.price),
-      mrp: Number(form.mrp),
-      wholesale_price: form.wholesale_price ? form.wholesale_price.trim() : null,
-      purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
-      website_price: form.website_price ? Number(form.website_price) : null,
-      barcode: form.barcode.trim() || null,
-      category: selectedCategories,
-      image_url: form.image_url.split("\n").map((s: string) => s.trim()).filter(Boolean),
-      video_url: form.video_url.trim() || null,
-      keywords: form.keywords.split(",").map((s: string) => s.trim()).filter(Boolean),
-      short_description: form.short_description.trim() || null,
-      long_description: form.long_description.trim() || null,
-      vendors: vendorArr.length > 0 ? vendorArr : [],
+    const handlePopState = () => {
+      if (fsProduct) closeFullscreen();
+      if (showLogin) onHideLogin();
     };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [fsProduct, showLogin, closeFullscreen, onHideLogin]);
 
+  async function handleDownload(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!fsProduct) return;
+    const media = [...(fsProduct.image_url || []), ...(fsProduct.video_url ? [fsProduct.video_url] : [])];
+    const url = media[fsIndex];
+    if (!url) return;
+    if (!navigator.onLine) { alert("Internet required to download."); return; }
+    setDownloading(true);
     try {
-      if (editId) {
-        const { error } = await supabase.from("products").update(payload).eq("id", editId);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("products").insert([payload]);
-        if (error) throw error;
-      }
-      setMsg({ text: editId ? "✅ Updated!" : "✅ Product added!", type: "success" });
-      fetchProducts();
-      setSaving(false);
-      setTimeout(() => { resetForm(); setTab("products"); setMsg({ text: "", type: "" }); }, 1500);
-    } catch (err: any) {
-      setMsg({ text: "❌ " + (err?.message || "Unknown error"), type: "error" });
-      setSaving(false);
-    }
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const ext = isVideo(url) ? "mp4" : "jpg";
+      const filename = fsProduct.name.replace(/[^a-z0-9]/gi, "_").toLowerCase() + "_" + (fsIndex + 1) + "." + ext;
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(blobUrl);
+    } catch { window.open(url, "_blank"); }
+    setDownloading(false);
   }
 
-  async function handleDelete(id: string) {
-    await supabase.from("products").delete().eq("id", id);
-    fetchProducts(); setDeleteId(null);
-  }
+  const getFsMedia = () => {
+    if (!fsProduct) return [];
+    return [...(fsProduct.image_url || []), ...(fsProduct.video_url ? [fsProduct.video_url] : [])];
+  };
+  const fsMedia = getFsMedia();
+  const fsSrc = fsMedia[fsIndex] || "";
 
-  const activeStaff = staffUsers.filter(s => s.status === "active");
-  const revokedStaff = staffUsers.filter(s => s.status === "revoked");
+  const allCategories = ["All", ...Array.from(new Set(products.flatMap(p => parseCategories(p.category)))).sort()];
 
-  if (!isMounted) return null;
+  const filtered = products.filter(p => {
+    const cats = parseCategories(p.category);
+    const matchCat = activeCategory === "All" || cats.includes(activeCategory);
+    const q = search.toLowerCase().trim();
+    const matchSearch = !q ||
+      p.name?.toLowerCase().includes(q) ||
+      (p.keywords || []).some((k: string) => k?.toLowerCase().includes(q)) ||
+      (p.barcode && p.barcode.toLowerCase() === q);
+    return matchCat && matchSearch;
+  });
 
-  if (!authed) {
-    return (
-      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#1a1a2e,#16213e,#0f3460)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui,sans-serif", padding: 24 }}>
-        <div style={{ background: "rgba(255,255,255,0.05)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 24, padding: 40, width: "100%", maxWidth: 380, textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🔐</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Admin Panel</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginBottom: 28 }}>Janaki Guru Enterprises</div>
-          <input type="password" placeholder="Enter admin password" value={pw}
-            onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()}
-            style={{ width: "100%", background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.15)", borderRadius: 12, padding: "12px 16px", fontSize: 14, color: "#fff", outline: "none", fontFamily: "system-ui,sans-serif", marginBottom: 12, boxSizing: "border-box" }} />
-          {pwError && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 10, fontWeight: 600 }}>{pwError}</div>}
-          <button onClick={handleLogin} style={{ width: "100%", background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 12, padding: "12px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Login →</button>
-        </div>
-      </div>
-    );
-  }
+  const wsLabels = ["Single", "Bundle", "Pack", "Bulk", "Special"];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "system-ui,sans-serif" }}>
-      {/* Top bar */}
-      <div style={{ background: "linear-gradient(135deg,#1a1a2e,#0f3460)", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.3)" }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>⚙ Admin Panel</div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Janaki Guru Enterprises</div>
-        </div>
-        <button onClick={() => { sessionStorage.removeItem("jg_admin"); setAuthed(false); }} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", borderRadius: 10, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Logout</button>
-      </div>
-
-      {/* Tabs */}
-      <div style={{ background: "#fff", borderBottom: "2px solid #e2e8f0", display: "flex", position: "sticky", top: 52, zIndex: 99 }}>
-        {([
-          { key: "products", label: `📦 Products (${products.length})` },
-          { key: "orders", label: `🛒 Orders (${orders.length})` },
-          { key: "staff", label: `👥 Staff (${activeStaff.length})` },
-          { key: "addproduct", label: editId ? "✏️ Edit" : "➕ Add" },
-          { key: "settings", label: "⚙️ Settings" },
-        ] as { key: Tab; label: string }[]).map(t => (
-          <button key={t.key} onClick={() => { setTab(t.key); if (t.key !== "addproduct") resetForm(); }} style={{
-            flex: 1, padding: "11px 4px", border: "none", background: "none",
-            fontSize: 11, fontWeight: 700, cursor: "pointer",
-            color: tab === t.key ? "#dc2626" : "#64748b",
-            borderBottom: tab === t.key ? "3px solid #dc2626" : "3px solid transparent",
-          }}>{t.label}</button>
-        ))}
-      </div>
-
-      <div style={{ padding: "16px 14px 80px" }}>
-
-        {/* ── PRODUCTS ── */}
-        {tab === "products" && (
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>All Products</div>
-              <button onClick={() => { resetForm(); setTab("addproduct"); }} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Add New</button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {products.map(p => (
-                <div key={p.id} style={{ background: "#fff", borderRadius: 14, padding: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", background: "#fff5f5", flexShrink: 0, border: "1px solid #fee2e2" }}>
-                    {p.image_url?.[0] ? <img src={p.image_url[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "#64748b" }}>{getCatStr(p.category)}</div>
-                    <div style={{ fontSize: 11, marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{p.price}</span>
-                      <span style={{ color: "#94a3b8", textDecoration: "line-through" }}>₹{p.mrp}</span>
-                      {p.wholesale_price && <span style={{ fontWeight: 700, color: "#0ea5e9" }}>W:₹{p.wholesale_price}</span>}
-                      {p.purchase_price && <span style={{ fontWeight: 700, color: "#16a34a" }}>P:₹{p.purchase_price}</span>}
-                      {Array.isArray((p as any).vendors) && (p as any).vendors.length > 0 && (
-                        <span style={{ fontWeight: 600, color: "#8b5cf6" }}>🏪 {(p as any).vendors.length} vendor{(p as any).vendors.length > 1 ? "s" : ""}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    <button onClick={() => startEdit(p)} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>✏️</button>
-                    <button onClick={() => setDeleteId(p.id)} style={{ background: "#fff5f5", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🗑</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── ORDERS ── */}
-        {tab === "orders" && (
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 14 }}>All Orders</div>
-            {orders.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>No orders yet.</div> : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {orders.map(o => (
-                  <div key={o.id} style={{ background: "#fff", borderRadius: 14, padding: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>👤 {o.customer_name}</div>
-                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>📞 {o.phone}</div>
-                        <div style={{ fontSize: 12, color: "#64748b" }}>📍 {o.address}</div>
-                        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>🕐 {new Date(o.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: "#dc2626" }}>₹{o.total_amount}</div>
-                        <button onClick={() => setExpandOrder(expandOrder === o.id ? null : o.id)} style={{ background: "#f1f5f9", border: "none", borderRadius: 8, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", marginTop: 4, color: "#475569" }}>{expandOrder === o.id ? "Hide" : "View items"}</button>
-                      </div>
-                    </div>
-                    {expandOrder === o.id && (
-                      <div style={{ borderTop: "1px dashed #e2e8f0", paddingTop: 10 }}>
-                        {(o.items || []).map((item: any, i: number) => (
-                          <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", color: "#475569" }}>
-                            <span>• {item.name} × {item.quantity}</span>
-                            <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{item.price * item.quantity}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── STAFF ── */}
-        {tab === "staff" && (
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>👥 Wholesale Staff</div>
-              <button onClick={() => { setStaffForm(emptyStaffForm); setStaffEditId(null); setShowStaffForm(true); setStaffMsg({ text: "", type: "" }); }} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Add Staff</button>
-            </div>
-
-            {showStaffForm && (
-              <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "2px solid #fca5a5", marginBottom: 16, boxShadow: "0 2px 12px rgba(220,38,38,0.1)" }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", marginBottom: 12 }}>{staffEditId ? "✏️ Edit Staff" : "➕ New Staff Account"}</div>
-                {staffMsg.text && (
-                  <div style={{ background: staffMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${staffMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: staffMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 10 }}>{staffMsg.text}</div>
-                )}
-                <div style={{ marginBottom: 10 }}>
-                  <label style={labelStyle}>Staff Name</label>
-                  <input value={staffForm.name} onChange={e => setStaffForm({ ...staffForm, name: e.target.value })} placeholder="e.g. Surendhar" style={inputStyle} />
-                </div>
-                <div style={{ marginBottom: 14 }}>
-                  <label style={labelStyle}>Password</label>
-                  <input value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} placeholder="Set a password for this staff" style={inputStyle} />
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={handleSaveStaff} disabled={saving} style={{ flex: 1, background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 12, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{saving ? "Saving..." : staffEditId ? "Update" : "Add Staff"}</button>
-                  <button onClick={() => { setShowStaffForm(false); setStaffForm(emptyStaffForm); setStaffEditId(null); }} style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#475569", borderRadius: 12, padding: "11px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
-                </div>
-              </div>
-            )}
-
-            {activeStaff.length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a", marginBottom: 8 }}>✅ ACTIVE ({activeStaff.length})</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {activeStaff.map(s => (
-                    <div key={s.id} style={{ background: "#fff", borderRadius: 12, padding: "12px 14px", border: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>👤 {s.name}</div>
-                        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
-                          Password:
-                          {showStaffPassword === s.id ? <span style={{ color: "#475569", fontWeight: 600 }}>{s.password}</span> : <span>••••••</span>}
-                          <button onClick={() => setShowStaffPassword(showStaffPassword === s.id ? null : s.id)} style={{ background: "none", border: "none", fontSize: 11, color: "#94a3b8", cursor: "pointer", padding: 0 }}>{showStaffPassword === s.id ? "hide" : "show"}</button>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => { setStaffForm({ name: s.name, password: s.password }); setStaffEditId(s.id); setShowStaffForm(true); }} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✏️</button>
-                        <button onClick={() => revokeStaff(s.id)} style={{ background: "#fff5f5", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Revoke</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {revokedStaff.length > 0 && (
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>🚫 REVOKED ({revokedStaff.length})</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {revokedStaff.map(s => (
-                    <div key={s.id} style={{ background: "#fff", borderRadius: 12, padding: "12px 14px", border: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: 0.7 }}>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>👤 {s.name}</div>
-                        <div style={{ fontSize: 11, color: "#dc2626", fontWeight: 600, marginTop: 2 }}>Access revoked</div>
-                      </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => reactivateStaff(s.id)} style={{ background: "#f0fdf4", border: "1px solid #86efac", color: "#16a34a", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Re-activate</button>
-                        <button onClick={() => deleteStaffUser(s.id)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", color: "#94a3b8", borderRadius: 8, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>🗑</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {staffUsers.length === 0 && !showStaffForm && (
-              <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>No staff added yet.</div>
-            )}
-          </div>
-        )}
-
-        {/* ── ADD / EDIT PRODUCT ── */}
-        {tab === "addproduct" && (
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>{editId ? "✏️ Edit Product" : "➕ Add New Product"}</div>
-            {msg.text && (
-              <div style={{ background: msg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${msg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 600, color: msg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 14 }}>{msg.text}</div>
-            )}
-            <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0" }}>
-
-              {/* Name + Barcode */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={labelStyle}>Product Name *</label>
-                  <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Apsara Pencil" style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Barcode (optional)</label>
-                  <input value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} placeholder="Scan or type barcode" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Used for barcode scanner search</div>
-                </div>
-              </div>
-
-              {/* Prices */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={labelStyle}>In Store Price (₹) *</label>
-                  <input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} placeholder="85" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Shown to staff in wholesale app</div>
-                </div>
-                <div>
-                  <label style={labelStyle}>MRP (₹) *</label>
-                  <input type="number" value={form.mrp} onChange={e => setForm({ ...form, mrp: e.target.value })} placeholder="100" style={inputStyle} />
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={labelStyle}>Website Price (₹)</label>
-                  <input type="number" value={form.website_price} onChange={e => setForm({ ...form, website_price: e.target.value })} placeholder="80" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#2563eb", marginTop: 3 }}>Shown to online customers</div>
-                </div>
-                <div>
-                  <label style={labelStyle}>Wholesale Price (₹)</label>
-                  <input type="text" value={form.wholesale_price} onChange={e => setForm({ ...form, wholesale_price: e.target.value })} placeholder="70 or 70/700 for multiple" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 3 }}>Use slash: 220/2000 = Single/Bundle</div>
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={labelStyle}>Purchase Price (₹)</label>
-                  <input type="number" value={form.purchase_price} onChange={e => setForm({ ...form, purchase_price: e.target.value })} placeholder="60" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Staff-only (encoded)</div>
-                </div>
-              </div>
-
-              {/* ── VENDOR PRICES ── */}
-              <div style={{ marginBottom: 14, background: "#f8f4ff", borderRadius: 12, padding: 14, border: "1.5px solid #e9d5ff" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <label style={{ ...labelStyle, color: "#7c3aed", marginBottom: 0 }}>🏪 Vendor Prices ({vendors.length}/5)</label>
-                  {vendors.length < 5 && (
-                    <button onClick={addVendor} style={{
-                      background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff",
-                      border: "none", borderRadius: 8, padding: "5px 12px",
-                      fontSize: 12, fontWeight: 700, cursor: "pointer",
-                    }}>+ Add Vendor</button>
-                  )}
-                </div>
-
-                {vendors.length === 0 && (
-                  <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", padding: "8px 0" }}>
-                    No vendors added. Click "+ Add Vendor" to add up to 5 vendor prices.
-                  </div>
-                )}
-
-                {vendors.map((v, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-end" }}>
-                    <div style={{ flex: 2 }}>
-                      {i === 0 && <label style={{ ...labelStyle, fontSize: 10 }}>Vendor Name</label>}
-                      <input
-                        value={v.name}
-                        onChange={e => updateVendor(i, "name", e.target.value)}
-                        placeholder={`Vendor ${i + 1} name`}
-                        style={{ ...inputStyle, background: "#fff" }}
-                      />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      {i === 0 && <label style={{ ...labelStyle, fontSize: 10 }}>Price (₹)</label>}
-                      <input
-                        type="number"
-                        value={v.price}
-                        onChange={e => updateVendor(i, "price", e.target.value)}
-                        placeholder="0"
-                        style={{ ...inputStyle, background: "#fff" }}
-                      />
-                    </div>
-                    <button onClick={() => removeVendor(i)} style={{
-                      background: "#fff5f5", border: "1px solid #fca5a5",
-                      color: "#dc2626", borderRadius: 8, padding: "10px 10px",
-                      fontSize: 14, cursor: "pointer", flexShrink: 0,
-                      marginBottom: 0,
-                    }}>✕</button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Smart Category Dropdown */}
-              <div style={{ marginBottom: 14, position: "relative" }}>
-                <label style={labelStyle}>Categories * (select or create new)</label>
-
-                {/* Selected category pills */}
-                {selectedCategories.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                    {selectedCategories.map((cat, i) => (
-                      <span key={i} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
-                        {cat}
-                        <button onClick={() => setSelectedCategories(prev => prev.filter((_, idx) => idx !== i))}
-                          style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>✕</button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Search input */}
-                <div style={{ position: "relative" }}>
-                  <input
-                    value={categoryInput}
-                    onChange={e => { setCategoryInput(e.target.value); setShowCatDropdown(true); }}
-                    onFocus={() => setShowCatDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowCatDropdown(false), 200)}
-                    placeholder="Type to search or create category..."
-                    style={inputStyle}
-                  />
-
-                  {/* Dropdown */}
-                  {showCatDropdown && (
-                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "2px solid #e2e8f0", borderRadius: 10, zIndex: 100, maxHeight: 200, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", marginTop: 2 }}>
-                      {/* Existing matching categories */}
-                      {products
-                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim()))
-                        .filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx)
-                        .filter(cat => !categoryInput || cat.toLowerCase().includes(categoryInput.toLowerCase()))
-                        .filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase()))
-                        .sort()
-                        .map((cat, i) => (
-                          <div key={i}
-                            onMouseDown={() => {
-                              setSelectedCategories(prev => [...prev, cat]);
-                              setCategoryInput("");
-                              setShowCatDropdown(false);
-                            }}
-                            style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#1e293b", fontWeight: 500, borderBottom: "1px solid #f1f5f9" }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "#fff5f5")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "#fff")}
-                          >
-                            {cat}
-                          </div>
-                        ))
-                      }
-                      {/* Create new option */}
-                      {categoryInput.trim() && !products
-                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim()))
-                        .some(c => c.toLowerCase() === categoryInput.trim().toLowerCase()) &&
-                        !selectedCategories.some(s => s.toLowerCase() === categoryInput.trim().toLowerCase()) && (
-                        <div
-                          onMouseDown={() => {
-                            const newCat = categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase();
-                            setSelectedCategories(prev => [...prev, newCat]);
-                            setCategoryInput("");
-                            setShowCatDropdown(false);
-                          }}
-                          style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#16a34a", fontWeight: 600, background: "#f0fdf4", borderTop: "1px solid #e2e8f0" }}
-                        >
-                          ＋ Create "{categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase()}"
-                        </div>
-                      )}
-                      {categoryInput.trim() === "" && products.flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim())).filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx).filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase())).length === 0 && (
-                        <div style={{ padding: "10px 14px", fontSize: 12, color: "#94a3b8" }}>Type to create a new category</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Select multiple. New categories auto-capitalize.</div>
-              </div>
-
-              {/* Images */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Image URLs (one per line)</label>
-                <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} placeholder={"https://example.com/img1.jpg\nhttps://example.com/img2.jpg"} rows={4} style={{ ...inputStyle, resize: "vertical" as const }} />
-              </div>
-
-              {/* Video */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Video URL (optional)</label>
-                <input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })} placeholder="https://example.com/video.mp4" style={inputStyle} />
-              </div>
-
-              {/* Keywords */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Keywords (comma separated)</label>
-                <input value={form.keywords} onChange={e => setForm({ ...form, keywords: e.target.value })} placeholder="pencil, apsara, writing, school" style={inputStyle} />
-              </div>
-
-              {/* ── DESCRIPTIONS ── */}
-              <div style={{ marginBottom: 14, background: "#f0fdf4", borderRadius: 12, padding: 14, border: "1.5px solid #86efac" }}>
-                <label style={{ ...labelStyle, color: "#16a34a", marginBottom: 10, display: "block" }}>📋 Product Description</label>
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ ...labelStyle, fontSize: 10 }}>Short Description (1-2 lines)</label>
-                  <input
-                    value={form.short_description}
-                    onChange={e => setForm({ ...form, short_description: e.target.value })}
-                    placeholder="e.g. Premium quality pencil, HB grade, smooth writing"
-                    style={{ ...inputStyle, background: "#fff" }}
-                  />
-                </div>
-                <div>
-                  <label style={{ ...labelStyle, fontSize: 10 }}>Long Description (full details)</label>
-                  <textarea
-                    value={form.long_description}
-                    onChange={e => setForm({ ...form, long_description: e.target.value })}
-                    placeholder="Enter full product details, specifications, usage, etc."
-                    rows={5}
-                    style={{ ...inputStyle, resize: "vertical" as const, background: "#fff" }}
-                  />
-                </div>
-              </div>
-
-              {/* Save buttons */}
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={handleSave} disabled={saving} style={{ flex: 1, background: saving ? "#f87171" : "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 12, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
-                  {saving ? "Saving..." : editId ? "💾 Update" : "✅ Add Product"}
-                </button>
-                <button onClick={() => { resetForm(); setTab("products"); }} style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#475569", borderRadius: 12, padding: "13px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-        {/* ── SETTINGS ── */}
-        {tab === "settings" && (
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>⚙️ Settings</div>
-
-            {/* Cipher Key Section */}
-            <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", marginBottom: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>🔐 ROYALTIMES Cipher Key</div>
-              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
-                This 10-character key encodes W/S and Purchase prices in the app. Each character represents a digit (0-9). Default: <strong>ROYALTIMES</strong>
-                <br/>1=R, 2=O, 3=Y, 4=A, 5=L, 6=T, 7=I, 8=M, 9=E, 0=S
-              </div>
-
-              <div style={{ background: "#f8f4ff", borderRadius: 10, padding: 12, marginBottom: 14, border: "1px solid #e9d5ff" }}>
-                <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 700, marginBottom: 6 }}>CURRENT KEY</div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {cipherKey.split("").map((ch, i) => (
-                    <div key={i} style={{ background: "#7c3aed", color: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 800, textAlign: "center", minWidth: 32 }}>
-                      <div style={{ fontSize: 9, opacity: 0.8 }}>{(i + 1) % 10}</div>
-                      <div>{ch}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {cipherMsg.text && (
-                <div style={{ background: cipherMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${cipherMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: cipherMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 12 }}>{cipherMsg.text}</div>
-              )}
-
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>New Cipher Key (exactly 10 unique characters)</label>
-                <input
-                  value={cipherInput}
-                  onChange={e => { setCipherInput(e.target.value.toUpperCase()); setCipherMsg({ text: "", type: "" }); }}
-                  placeholder="ROYALTIMES"
-                  maxLength={10}
-                  style={{ ...inputStyle, fontFamily: "monospace", fontSize: 18, letterSpacing: 4, textTransform: "uppercase" }}
-                />
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
-                  {cipherInput.length}/10 characters
-                  {cipherInput.length === 10 && new Set(cipherInput).size === 10 && <span style={{ color: "#16a34a", marginLeft: 8 }}>✅ Valid key</span>}
-                  {cipherInput.length === 10 && new Set(cipherInput).size !== 10 && <span style={{ color: "#dc2626", marginLeft: 8 }}>❌ Duplicate characters</span>}
-                </div>
-              </div>
-
-              <button onClick={saveCipherKey} disabled={cipherLoading} style={{ width: "100%", background: cipherLoading ? "#a78bfa" : "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff", border: "none", borderRadius: 12, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-                {cipherLoading ? "Saving..." : "🔐 Update Cipher Key"}
-              </button>
-
-              <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
-                ⚠️ After changing, staff will see new codes when they reopen the app
-              </div>
-            </div>
-          </div>
-        )}
-
-      {/* Delete modal */}
-      {deleteId && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 24 }}>
-          <div style={{ background: "#fff", borderRadius: 20, padding: 28, maxWidth: 320, width: "100%", textAlign: "center" }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>Delete Product?</div>
-            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 24 }}>This cannot be undone.</div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => handleDelete(deleteId)} style={{ flex: 1, background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 12, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Yes, Delete</button>
-              <button onClick={() => setDeleteId(null)} style={{ flex: 1, background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#475569", borderRadius: 12, padding: "11px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
-            </div>
-          </div>
+    <div style={{ minHeight: "100dvh", background: "#fff9f9", fontFamily: "system-ui,sans-serif" }}>
+      {isOffline && (
+        <div style={{ background: "#fef3c7", borderBottom: "1px solid #f59e0b", padding: "6px 16px", textAlign: "center", fontSize: 12, color: "#92400e" }}>
+          📴 Offline — showing cached data
         </div>
       )}
+      {debugMsg && (
+        <div style={{ background: "#fef2f2", borderBottom: "1px solid #fca5a5", padding: "6px 16px", fontSize: 11, color: "#dc2626", wordBreak: "break-all" }}>
+          🔴 {debugMsg}
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{ position: "sticky", top: 0, zIndex: 100, background: "linear-gradient(135deg,#ef4444,#b91c1c)", padding: "12px 16px 10px", boxShadow: "0 2px 12px rgba(185,28,28,0.25)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>🏬 JG Wholesale</div>
+            {staff && <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 11 }}>👤 {staff.name}</div>}
+          </div>
+          {staff ? (
+            <button onClick={onLogout} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Logout</button>
+          ) : (
+            <button onClick={onShowLogin} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🔐 Staff Login</button>
+          )}
+        </div>
+
+        {/* Search + Barcode */}
+        <div style={{ position: "relative", display: "flex", gap: 8 }}>
+          <div style={{ position: "relative", flex: 1 }}>
+            <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 14 }}>🔍</span>
+            <input
+              placeholder="Search products..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", padding: "9px 12px 9px 32px", borderRadius: 12, border: "none", fontSize: 13, outline: "none", background: "rgba(255,255,255,0.95)" }}
+            />
+          </div>
+          {/* Barcode button */}
+          <button
+            onClick={openScanner}
+            style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", borderRadius: 12, padding: "9px 14px", fontSize: 18, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+            title="Scan barcode"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="1" y="4" width="3" height="16"/><rect x="6" y="4" width="1" height="16"/>
+              <rect x="9" y="4" width="2" height="16"/><rect x="13" y="4" width="1" height="16"/>
+              <rect x="16" y="4" width="3" height="16"/><rect x="21" y="4" width="2" height="16"/>
+              <line x1="1" y1="20" x2="4" y2="20"/><line x1="1" y1="4" x2="4" y2="4"/>
+              <line x1="20" y1="20" x2="23" y2="20"/><line x1="20" y1="4" x2="23" y2="4"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Category chips */}
+      {allCategories.length > 1 && (
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "10px 16px", scrollbarWidth: "none", background: "#fff", borderBottom: "1px solid #fee2e2" }}>
+          {allCategories.map(cat => (
+            <button key={cat} onClick={() => setActiveCategory(cat)} style={{
+              flexShrink: 0, padding: "5px 14px", borderRadius: 20,
+              border: activeCategory === cat ? "none" : "1.5px solid #fca5a5",
+              background: activeCategory === cat ? "linear-gradient(135deg,#ef4444,#b91c1c)" : "#fff",
+              color: activeCategory === cat ? "#fff" : "#dc2626",
+              fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+            }}>{cat}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Product grid */}
+      <div style={{ padding: "12px 10px", paddingBottom: 80 }}>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 60, color: "#9ca3af" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+            <div>Loading products...</div>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 60, color: "#9ca3af" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>📭</div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>No products found</div>
+            {search && <div style={{ fontSize: 12, color: "#b91c1c", marginTop: 4 }}>Searched: "{search}"</div>}
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {filtered.map(p => (
+              <ProductCard key={p.id} product={p} staff={staff} cipherKey={cipherKey} onImageClick={(idx) => openFullscreen(p, idx)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Footer count */}
+      {!loading && (
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff", borderTop: "1px solid #fee2e2", padding: "8px 16px", textAlign: "center", fontSize: 11, color: "#9ca3af" }}>
+          {filtered.length} product{filtered.length !== 1 ? "s" : ""}
+        </div>
+      )}
+
+      {/* ── BARCODE SCANNER MODAL ── */}
+      {scannerOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 9999, display: "flex", flexDirection: "column" }}>
+          {/* Scanner header */}
+          <div style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>📷 Scan Barcode</div>
+            <button onClick={closeScanner} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 8, width: 32, height: 32, fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          </div>
+
+          {/* Camera view */}
+          <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover" }} playsInline muted />
+
+            {/* Scan overlay */}
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+              <div style={{ width: 260, height: 160, position: "relative" }}>
+                {/* Corner markers */}
+                {[["0,0","0,0"],["auto,0","0,0"],["0,auto","0,0"],["auto,auto","0,0"]].map((_, i) => (
+                  <div key={i} style={{
+                    position: "absolute",
+                    top: i < 2 ? 0 : "auto", bottom: i >= 2 ? 0 : "auto",
+                    left: i % 2 === 0 ? 0 : "auto", right: i % 2 === 1 ? 0 : "auto",
+                    width: 24, height: 24,
+                    borderTop: i < 2 ? "3px solid #ef4444" : "none",
+                    borderBottom: i >= 2 ? "3px solid #ef4444" : "none",
+                    borderLeft: i % 2 === 0 ? "3px solid #ef4444" : "none",
+                    borderRight: i % 2 === 1 ? "3px solid #ef4444" : "none",
+                  }} />
+                ))}
+                {/* Scan line animation */}
+                <div style={{
+                  position: "absolute", left: 0, right: 0, height: 2,
+                  background: "rgba(239,68,68,0.8)",
+                  animation: "scanLine 1.5s ease-in-out infinite",
+                  top: "50%",
+                }} />
+              </div>
+            </div>
+
+            {scannerLoading && (
+              <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ color: "#fff", fontSize: 14, marginBottom: 8 }}>⏳ Starting camera...</div>
+              </div>
+            )}
+
+            {scannerError && (
+              <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+                <div style={{ color: "#f87171", fontSize: 14, textAlign: "center", marginBottom: 16 }}>{scannerError}</div>
+                <button onClick={closeScanner} style={{ background: "#ef4444", border: "none", color: "#fff", borderRadius: 10, padding: "10px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Close</button>
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: "#111", padding: "12px 16px", textAlign: "center" }}>
+            <div style={{ color: "rgba(255,255,255,0.9)", fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+              📷 Point camera at barcode
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>
+              Hold steady — scanning automatically
+            </div>
+          </div>
+
+          <style>{`
+            @keyframes scanLine {
+              0% { top: 10%; }
+              50% { top: 90%; }
+              100% { top: 10%; }
+            }
+          `}</style>
+        </div>
+      )}
+
+      {/* ── FULLSCREEN VIEWER ── */}
+      {fsProduct && (
+        <div className={fsClosing ? "fs-bg-out" : "fs-bg"}
+          style={{ position: "fixed", inset: 0, background: "linear-gradient(160deg,#1a0000,#2d0000,#1a0000)", zIndex: 9998, display: "flex", flexDirection: "column", overflowY: "auto" }}
+          onClick={closeFullscreen}
+        >
+          <style>{`
+            @keyframes fsBgIn { from{opacity:0} to{opacity:1} }
+            @keyframes fsBgOut { from{opacity:1} to{opacity:0} }
+            .fs-bg { animation: fsBgIn 0.25s ease both; }
+            .fs-bg-out { animation: fsBgOut 0.25s ease both; }
+          `}</style>
+
+          {/* Top bar */}
+          <div onClick={e => e.stopPropagation()} style={{ position: "sticky", top: 0, zIndex: 10, background: "linear-gradient(135deg,#ef4444,#b91c1c)", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+              <button onClick={closeFullscreen} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 8, width: 32, height: 32, fontSize: 18, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
+              <div style={{ color: "#fff", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fsProduct.name}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginLeft: 8 }}>
+              {fsMedia.length > 1 && <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: 600 }}>{fsIndex + 1}/{fsMedia.length}</span>}
+              <button onClick={handleDownload} disabled={downloading} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                {downloading ? "⏳" : "⬇️"} {downloading ? "..." : "Save"}
+              </button>
+              <button onClick={closeFullscreen} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", borderRadius: 8, width: 32, height: 32, fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+            </div>
+          </div>
+
+          {/* Media */}
+          <div onClick={e => e.stopPropagation()} style={{ width: "100%", background: "#000" }}>
+            {isVideo(fsSrc) ? (
+              <video src={fsSrc} controls autoPlay style={{ width: "100%", maxHeight: "55vh", objectFit: "contain", display: "block" }} />
+            ) : (
+              <img src={fsSrc} alt={fsProduct.name} style={{ width: "100%", maxHeight: "55vh", objectFit: "contain", display: "block", padding: 8, boxSizing: "border-box" }} />
+            )}
+          </div>
+
+          {/* Nav */}
+          {fsMedia.length > 1 && (
+            <div onClick={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, padding: "10px 0" }}>
+              <button onClick={e => { e.stopPropagation(); setFsIndex(i => (i - 1 + fsMedia.length) % fsMedia.length); }} style={{ background: "rgba(239,68,68,0.85)", border: "none", color: "#fff", borderRadius: "50%", width: 38, height: 38, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+              <div style={{ display: "flex", gap: 6 }}>
+                {fsMedia.map((_, i) => (
+                  <div key={i} onClick={() => setFsIndex(i)} style={{ width: i === fsIndex ? 18 : 7, height: 7, borderRadius: 4, background: i === fsIndex ? "#ef4444" : "rgba(255,255,255,0.4)", transition: "all 0.3s ease", cursor: "pointer" }} />
+                ))}
+              </div>
+              <button onClick={e => { e.stopPropagation(); setFsIndex(i => (i + 1) % fsMedia.length); }} style={{ background: "rgba(239,68,68,0.85)", border: "none", color: "#fff", borderRadius: "50%", width: 38, height: 38, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+            </div>
+          )}
+
+          {/* Description */}
+          {(fsProduct.short_description || fsProduct.long_description) && (
+            <div onClick={e => e.stopPropagation()} style={{ margin: "0 12px 12px", background: "rgba(255,255,255,0.08)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", padding: "12px 14px" }}>
+              <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, marginBottom: 8 }}>📋 DESCRIPTION</div>
+              {fsProduct.short_description && <div style={{ color: "#fff", fontSize: 13, fontWeight: 600, marginBottom: fsProduct.long_description ? 8 : 0, lineHeight: 1.5 }}>{fsProduct.short_description}</div>}
+              {fsProduct.long_description && <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{fsProduct.long_description}</div>}
+            </div>
+          )}
+
+          <div style={{ height: 24 }} />
+        </div>
+      )}
+
+      {showLogin && <StaffLogin onSuccess={onStaffChange} onClose={onHideLogin} />}
     </div>
   );
 }
-
-const labelStyle: React.CSSProperties = { display: "block", fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.5px" };
-const inputStyle: React.CSSProperties = { width: "100%", border: "2px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", fontSize: 14, fontFamily: "system-ui,sans-serif", color: "#1e293b", background: "#f8fafc", outline: "none", boxSizing: "border-box" as const };
