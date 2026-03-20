@@ -7,6 +7,7 @@ interface Product {
   name: string;
   price: number;
   mrp: number;
+  website_price?: number;
   category: string | string[];
   image_url: string[];
   video_url?: string;
@@ -33,6 +34,9 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
     ...(product.video_url ? [product.video_url] : []),
   ];
 
+  // Use website_price if set, otherwise fall back to in-store price
+  const displayPrice = product.website_price || product.price;
+
   const [current, setCurrent] = useState(0);
   const [next, setNext] = useState<number | null>(null);
   const [dir, setDir] = useState<"left" | "right">("left");
@@ -41,43 +45,17 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
   const [fsIndex, setFsIndex] = useState(0);
   const [fsClosing, setFsClosing] = useState(false);
   const [downloading, setDownloading] = useState(false);
-
-  async function handleDownload(e: React.MouseEvent) {
-    e.stopPropagation();
-    const url = media[fsIndex];
-    if (!url) return;
-    setDownloading(true);
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const ext = isVideo(url) ? "mp4" : "jpg";
-      const filename = product.name.replace(/[^a-z0-9]/gi, "_").toLowerCase() + "_" + (fsIndex + 1) + "." + ext;
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
-    } catch {
-      window.open(url, "_blank");
-    }
-    setDownloading(false);
-  }
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockRef = useRef(false);
 
-  const displayPrice = (product as any).website_price || product.price;
+  // Swipe support refs
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const fsTouchStartX = useRef(0);
+
   const discount = product.mrp > displayPrice
     ? Math.round(((product.mrp - displayPrice) / product.mrp) * 100)
     : 0;
-
-  const categories = Array.isArray(product.category)
-    ? product.category
-    : product.category
-      ? product.category.split(",").map((c: string) => c.trim()).filter(Boolean)
-      : [];
 
   const slideTo = (nextIdx: number, direction: "left" | "right") => {
     if (lockRef.current || nextIdx === current) return;
@@ -103,6 +81,21 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
     slideTo((current + 1) % media.length, "left");
   };
 
+  // Touch handlers for card swipe
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
+    if (Math.abs(dx) > 40 && dy < 60) {
+      if (dx < 0) slideTo((current + 1) % media.length, "left");
+      else slideTo((current - 1 + media.length) % media.length, "right");
+    }
+  };
+
   useEffect(() => {
     if (media.length <= 1) return;
     if (isVideo(media[current])) return;
@@ -119,6 +112,18 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
   const fsNext = (e: React.MouseEvent) => {
     e.stopPropagation();
     setFsIndex(i => (i + 1) % media.length);
+  };
+
+  // Fullscreen swipe handlers
+  const handleFsTouchStart = (e: React.TouchEvent) => {
+    fsTouchStartX.current = e.touches[0].clientX;
+  };
+  const handleFsTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - fsTouchStartX.current;
+    if (Math.abs(dx) > 50) {
+      if (dx < 0) setFsIndex(i => (i + 1) % media.length);
+      else setFsIndex(i => (i - 1 + media.length) % media.length);
+    }
   };
 
   const openFullscreen = () => {
@@ -143,6 +148,25 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  async function handleDownload(e: React.MouseEvent) {
+    e.stopPropagation();
+    const url = media[fsIndex];
+    if (!url) return;
+    setDownloading(true);
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const ext = isVideo(url) ? "mp4" : "jpg";
+      const filename = product.name.replace(/[^a-z0-9]/gi, "_").toLowerCase() + "_" + (fsIndex + 1) + "." + ext;
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(blobUrl);
+    } catch { window.open(media[fsIndex], "_blank"); }
+    setDownloading(false);
+  }
+
   const currentSrc = media[current] || "";
   const nextSrc = next !== null ? media[next] : "";
   const fsSrc = media[fsIndex] || "";
@@ -161,50 +185,29 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
         @keyframes wipeOutRight { from{transform:translateX(0%)} to{transform:translateX(100%)} }
         @keyframes wipeInRight { from{transform:translateX(100%)} to{transform:translateX(0%)} }
         @keyframes wipeInLeft { from{transform:translateX(-100%)} to{transform:translateX(0%)} }
-        @keyframes fsZoomIn {
-          from { opacity:0; transform:scale(0.88); }
-          to   { opacity:1; transform:scale(1); }
-        }
-        @keyframes fsZoomOut {
-          from { opacity:1; transform:scale(1); }
-          to   { opacity:0; transform:scale(0.88); }
-        }
-        @keyframes fsBgIn {
-          from { opacity:0; }
-          to   { opacity:1; }
-        }
-        @keyframes fsBgOut {
-          from { opacity:1; }
-          to   { opacity:0; }
-        }
-        .fs-content {
-          animation: fsZoomIn 0.28s cubic-bezier(0.34,1.56,0.64,1) both;
-        }
-        .fs-content-out {
-          animation: fsZoomOut 0.28s ease both;
-        }
-        .fs-bg {
-          animation: fsBgIn 0.28s ease both;
-        }
-        .fs-bg-out {
-          animation: fsBgOut 0.28s ease both;
-        }
+        @keyframes fsZoomIn { from{opacity:0;transform:scale(0.88)} to{opacity:1;transform:scale(1)} }
+        @keyframes fsZoomOut { from{opacity:1;transform:scale(1)} to{opacity:0;transform:scale(0.88)} }
+        @keyframes fsBgIn { from{opacity:0} to{opacity:1} }
+        @keyframes fsBgOut { from{opacity:1} to{opacity:0} }
+        .fs-content { animation: fsZoomIn 0.28s cubic-bezier(0.34,1.56,0.64,1) both; }
+        .fs-content-out { animation: fsZoomOut 0.28s ease both; }
+        .fs-bg { animation: fsBgIn 0.28s ease both; }
+        .fs-bg-out { animation: fsBgOut 0.28s ease both; }
         .card-img-area:hover .desktop-arrow { opacity: 1 !important; }
-        @media (max-width: 640px) {
-          .desktop-arrow { display: none !important; }
-        }
+        @media (max-width: 640px) { .desktop-arrow { display: none !important; } }
       `}</style>
 
-      {/* ── FULLSCREEN MODAL ── */}
+      {/* FULLSCREEN MODAL */}
       {fullscreen && (
         <div
           className={fsClosing ? "fs-bg-out" : "fs-bg"}
           onClick={closeFullscreen}
+          onTouchStart={handleFsTouchStart}
+          onTouchEnd={handleFsTouchEnd}
           style={{
             position: "fixed", inset: 0,
-            background: "linear-gradient(160deg, #1a0000 0%, #2d0000 40%, #1a0000 100%)",
-            zIndex: 9999,
-            display: "flex", flexDirection: "column",
+            background: "linear-gradient(160deg,#1a0000,#2d0000,#1a0000)",
+            zIndex: 9999, display: "flex", flexDirection: "column",
             alignItems: "center", justifyContent: "center",
           }}
         >
@@ -221,9 +224,7 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {media.length > 1 && (
-                <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: 600 }}>
-                  {fsIndex + 1} / {media.length}
-                </span>
+                <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: 600 }}>{fsIndex + 1}/{media.length}</span>
               )}
               <button onClick={handleDownload} disabled={downloading} style={{
                 background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)",
@@ -239,19 +240,16 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             </div>
           </div>
 
-          {/* Image/Video */}
+          {/* Image */}
           <div
             className={fsClosing ? "fs-content-out" : "fs-content"}
             onClick={e => e.stopPropagation()}
             style={{
-              width: "90vw", maxWidth: 480,
-              background: "#fff",
-              borderRadius: 20,
-              overflow: "hidden",
-              boxShadow: "0 20px 60px rgba(239,68,68,0.3), 0 4px 20px rgba(0,0,0,0.5)",
+              width: "90vw", maxWidth: 480, background: "#fff",
+              borderRadius: 20, overflow: "hidden",
+              boxShadow: "0 20px 60px rgba(239,68,68,0.3),0 4px 20px rgba(0,0,0,0.5)",
               border: "2px solid rgba(239,68,68,0.4)",
-              marginTop: 56,
-              marginBottom: 60,
+              marginTop: 56, marginBottom: 60,
             }}
           >
             {isVideo(fsSrc) ? (
@@ -265,21 +263,17 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             )}
           </div>
 
-          {/* Bottom nav arrows + dots */}
+          {/* Swipe hint + dots */}
           {media.length > 1 && (
-            <div
-              onClick={e => e.stopPropagation()}
-              style={{
-                position: "absolute", bottom: 16, left: 0, right: 0,
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 16,
-              }}
-            >
+            <div onClick={e => e.stopPropagation()} style={{
+              position: "absolute", bottom: 16, left: 0, right: 0,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 16,
+            }}>
               <button onClick={fsPrev} style={{
                 background: "rgba(239,68,68,0.85)", border: "none", color: "#fff",
                 borderRadius: "50%", width: 40, height: 40, fontSize: 20,
                 cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
               }}>‹</button>
-
               <div style={{ display: "flex", gap: 6 }}>
                 {media.map((_, i) => (
                   <div key={i} onClick={() => setFsIndex(i)} style={{
@@ -289,7 +283,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
                   }} />
                 ))}
               </div>
-
               <button onClick={fsNext} style={{
                 background: "rgba(239,68,68,0.85)", border: "none", color: "#fff",
                 borderRadius: "50%", width: 40, height: 40, fontSize: 20,
@@ -300,17 +293,18 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
         </div>
       )}
 
-      {/* ── PRODUCT CARD ── */}
+      {/* PRODUCT CARD */}
       <div style={{
         background: "#fff", borderRadius: 14, overflow: "hidden",
         boxShadow: "0 2px 10px rgba(220,38,38,0.08)", border: "1.5px solid #fee2e2",
         display: "flex", flexDirection: "column",
       }}>
-
-        {/* IMAGE AREA */}
+        {/* IMAGE AREA with swipe */}
         <div
           className="card-img-area"
           onClick={openFullscreen}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
           style={{
             width: "100%", aspectRatio: "1 / 1",
             background: "#fff5f5", position: "relative", overflow: "hidden",
@@ -345,7 +339,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             </>
           )}
 
-          {/* Discount badge */}
           {discount > 0 && (
             <span style={{
               position: "absolute", top: 6, left: 6,
@@ -355,7 +348,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             }}>{discount}% OFF</span>
           )}
 
-          {/* Desktop arrows — hidden on mobile, visible on hover */}
           {media.length > 1 && (
             <>
               <button className="desktop-arrow" onClick={goPrev} style={{
@@ -376,16 +368,11 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
                 boxShadow: "0 2px 6px rgba(0,0,0,0.12)", opacity: 0,
                 transition: "opacity 0.2s ease",
               }}>›</button>
-
-              {/* Counter */}
               <div style={{
                 position: "absolute", bottom: 6, right: 6,
                 background: "rgba(0,0,0,0.45)", color: "#fff",
-                fontSize: 10, fontWeight: 700, borderRadius: 10,
-                padding: "2px 7px", zIndex: 10,
+                fontSize: 10, fontWeight: 700, borderRadius: 10, padding: "2px 7px", zIndex: 10,
               }}>{current + 1}/{media.length}</div>
-
-              {/* Dots */}
               <div style={{
                 position: "absolute", bottom: 7, left: "50%", transform: "translateX(-50%)",
                 display: "flex", gap: 4, zIndex: 10,
@@ -408,8 +395,7 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             <div style={{
               position: "absolute", bottom: 6, left: 6,
               background: "rgba(220,38,38,0.85)", color: "#fff",
-              fontSize: 9, fontWeight: 700, borderRadius: 10,
-              padding: "2px 6px", zIndex: 10,
+              fontSize: 9, fontWeight: 700, borderRadius: 10, padding: "2px 6px", zIndex: 10,
             }}>▶ VIDEO</div>
           )}
         </div>

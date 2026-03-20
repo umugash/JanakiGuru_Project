@@ -23,7 +23,6 @@ export default function Home() {
   }, [cart, isMounted]);
 
   useEffect(() => { fetchProducts(); }, []);
-
   useEffect(() => { filterProducts(); }, [searchTerm, selectedCategory, products]);
 
   async function fetchProducts() {
@@ -73,7 +72,7 @@ export default function Home() {
 
   const categories = [...new Set(products.map(p => p.category))];
   const totalCartItems = cart.reduce((sum, item) => sum + (item.quantity || 0), 0);
-  const totalCartAmount = cart.reduce((sum, item) => sum + (((item as any).website_price || item.price)) * (item.quantity || 0), 0);
+  const totalCartAmount = cart.reduce((sum, item) => sum + ((item.website_price || item.price)) * (item.quantity || 0), 0);
 
   if (!isMounted) return null;
 
@@ -95,25 +94,20 @@ export default function Home() {
               STATIONERY STORE
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-            {/* Phone number */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
             <a href="tel:9500259930" style={{ textDecoration: "none" }}>
               <div style={{
-                background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-                borderRadius: 10, padding: "4px 10px",
+                background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)",
+                borderRadius: 10, padding: "5px 12px",
                 display: "flex", alignItems: "center", gap: 5,
-                fontSize: 11, fontWeight: 700, color: "#fff",
-              }}>
-                📞 9500259930
-              </div>
+                fontSize: 12, fontWeight: 700, color: "#fff",
+              }}>📞 9500259930</div>
             </a>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.7)", textAlign: "right" }}>
-              Bulk orders / queries
-            </div>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.7)", textAlign: "right" }}>Bulk orders / queries</div>
           </div>
         </div>
 
-        {/* Search + Cart row */}
+        {/* Search + Cart */}
         <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
           <div style={{ position: "relative", flex: 1 }}>
             <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 15 }}>🔍</span>
@@ -135,7 +129,7 @@ export default function Home() {
             <div style={{
               background: "#fff", border: "2px solid #fff",
               color: "#dc2626", borderRadius: 12, padding: "8px 14px",
-              fontFamily: "system-ui, sans-serif", fontSize: 13, fontWeight: 700,
+              fontSize: 13, fontWeight: 700,
               display: "flex", alignItems: "center", gap: 6,
               boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             }}>
@@ -154,12 +148,15 @@ export default function Home() {
         {/* Delivery tag */}
         <div style={{
           background: "rgba(255,255,255,0.15)", borderTop: "1px solid rgba(255,255,255,0.2)",
-          padding: "7px 16px", display: "flex", alignItems: "center", gap: 6,
+          padding: "7px 16px", display: "flex", alignItems: "center", gap: 8,
           fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.9)",
           fontFamily: "system-ui, sans-serif",
           marginLeft: -16, marginRight: -16,
         }}>
-          🚚 Free delivery within 10 km &nbsp;·&nbsp; 📍 Local store
+          🚚 Free delivery within 10 km &nbsp;·&nbsp;
+          <span style={{ background: "rgba(255,255,255,0.2)", borderRadius: 8, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>
+            ⚡ Same Day Delivery
+          </span>
         </div>
       </div>
 
@@ -180,7 +177,7 @@ export default function Home() {
         </span>
       </div>
 
-      {/* PRODUCT GRID - 3 columns */}
+      {/* PRODUCT GRID */}
       {filteredProducts.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 20px", color: "#9ca3af", fontFamily: "system-ui, sans-serif" }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
@@ -189,11 +186,8 @@ export default function Home() {
         </div>
       ) : (
         <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 10,
-          padding: "0 10px",
-          alignItems: "start",
+          display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 10, padding: "0 10px", alignItems: "start",
         }}>
           {filteredProducts.map(product => {
             const cartItem = cart.find(p => p.id === product.id);
