@@ -333,7 +333,8 @@ export default function AdminPage() {
                     <div style={{ fontSize: 11, marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{p.price}</span>
                       <span style={{ color: "#94a3b8", textDecoration: "line-through" }}>₹{p.mrp}</span>
-                      {p.wholesale_price && <span style={{ fontWeight: 700, color: "#0ea5e9" }}>W:₹{p.wholesale_price}</span>}
+                      {(p as any).website_price && <span style={{ fontWeight: 700, color: "#2563eb" }}>W:₹{(p as any).website_price}</span>}
+                      {p.wholesale_price && <span style={{ fontWeight: 700, color: "#0ea5e9" }}>WS:₹{p.wholesale_price}</span>}
                       {p.purchase_price && <span style={{ fontWeight: 700, color: "#16a34a" }}>P:₹{p.purchase_price}</span>}
                       {Array.isArray((p as any).vendors) && (p as any).vendors.length > 0 && (
                         <span style={{ fontWeight: 600, color: "#8b5cf6" }}>🏪 {(p as any).vendors.length} vendor{(p as any).vendors.length > 1 ? "s" : ""}</span>

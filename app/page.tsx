@@ -44,9 +44,24 @@ export default function Home() {
     }
   }
 
+  function parseProductCategories(cat: any): string[] {
+    if (!cat) return [];
+    if (Array.isArray(cat)) return cat.map(String).map(s => s.replace(/^["'\[\]\\]+|["'\[\]\\]+$/g, "").trim()).filter(Boolean);
+    if (typeof cat === "string") {
+      const s = cat.trim().replace(/\\/g, "");
+      try {
+        const parsed = JSON.parse(s);
+        if (Array.isArray(parsed)) return parsed.map(String).map(x => x.trim()).filter(Boolean);
+        if (typeof parsed === "string") return [parsed.trim()];
+      } catch {}
+      return s.replace(/^[\["']+|[\]"']+$/g, "").split(",").map(x => x.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
   function filterProducts() {
     let filtered = products;
-    if (selectedCategory !== "All") filtered = filtered.filter(p => p.category === selectedCategory);
+    if (selectedCategory !== "All") filtered = filtered.filter(p => parseProductCategories(p.category).includes(selectedCategory));
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(p => {
@@ -70,7 +85,19 @@ export default function Home() {
     setCart(prev => prev.map(p => p.id === product.id ? { ...p, quantity: (p.quantity || 1) - 1 } : p).filter(p => p.quantity > 0));
   }
 
-  const categories = [...new Set(products.map(p => p.category))];
+  const categories = [...new Set(
+    products.flatMap(p => {
+      const cat = p.category;
+      if (!cat) return [];
+      if (Array.isArray(cat)) return cat.map(String).map((s:string) => s.replace(/^["'\[\]\\]+|["'\[\]\\]+$/g,"").trim()).filter(Boolean);
+      if (typeof cat === "string") {
+        const s = cat.trim().replace(/\\/g,"");
+        try { const parsed = JSON.parse(s); if (Array.isArray(parsed)) return parsed.map(String).map((x:string)=>x.trim()).filter(Boolean); } catch {}
+        return s.replace(/^[\["']+|[\]"']+ $/g,"").split(",").map((x:string)=>x.trim()).filter(Boolean);
+      }
+      return [];
+    })
+  )].filter(Boolean).sort() as string[];
   const totalCartItems = cart.reduce((sum, item) => sum + (item.quantity || 0), 0);
   const totalCartAmount = cart.reduce((sum, item) => sum + ((item.website_price || item.price)) * (item.quantity || 0), 0);
 
