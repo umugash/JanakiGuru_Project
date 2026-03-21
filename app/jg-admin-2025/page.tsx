@@ -48,6 +48,8 @@ export default function AdminPage() {
   const [categoryInput, setCategoryInput] = useState("");
   const [showCatDropdown, setShowCatDropdown] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
   const [msg, setMsg] = useState({ text: "", type: "" });
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [expandOrder, setExpandOrder] = useState<string | null>(null);
@@ -705,40 +707,71 @@ export default function AdminPage() {
               {/* Images with upload */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Images</label>
-                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                  <label style={{
-                    flex: 1, background: "#eff6ff", border: "2px dashed #93c5fd", borderRadius: 10,
-                    padding: "10px", textAlign: "center", cursor: "pointer", fontSize: 12,
-                    color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                  }}>
-                    <input type="file" accept="image/*" multiple style={{ display: "none" }}
-                      onChange={async (e) => {
-                        const files = Array.from(e.target.files || []);
-                        const urls: string[] = [];
-                        for (const file of files) {
+                <label style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  background: uploadingImages ? "#dbeafe" : "#eff6ff",
+                  border: "2px dashed #93c5fd", borderRadius: 10,
+                  padding: "12px", textAlign: "center", cursor: uploadingImages ? "wait" : "pointer",
+                  fontSize: 12, color: "#2563eb", fontWeight: 600, marginBottom: 8,
+                }}>
+                  <input type="file" accept="image/*" multiple style={{ display: "none" }}
+                    disabled={uploadingImages}
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (!files.length) return;
+                      setUploadingImages(true);
+                      const urls: string[] = [];
+                      for (const file of files) {
+                        try {
                           const fd = new FormData();
                           fd.append("image", file);
                           fd.append("key", "6305b0abbb13f94c9396a3f995b73b34");
                           const res = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: fd });
                           const data = await res.json();
                           if (data.data?.url) urls.push(data.data.url);
-                        }
-                        const existing = form.image_url.trim();
-                        const combined = existing ? existing + "\n" + urls.join("\n") : urls.join("\n");
-                        setForm({ ...form, image_url: combined });
-                      }}
-                    />
-                    📷 Upload Images
-                  </label>
-                </div>
+                        } catch {}
+                      }
+                      const existing = form.image_url.trim();
+                      const combined = existing ? existing + "\n" + urls.join("\n") : urls.join("\n");
+                      setForm(f => ({ ...f, image_url: combined }));
+                      setUploadingImages(false);
+                      e.target.value = "";
+                    }}
+                  />
+                  {uploadingImages ? "⏳ Uploading..." : "📷 Upload Images (select multiple)"}
+                </label>
                 <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })}
-                  placeholder={"https://example.com/img1.jpg\nhttps://example.com/img2.jpg\n(or upload above)"}
-                  rows={3} style={{ ...inputStyle, resize: "vertical" as const }} />
+                  placeholder={"https://i.ibb.co/xxx/img.jpg\n(paste URLs or upload above)"}
+                  rows={2} style={{ ...inputStyle, resize: "vertical" as const }} />
+                {/* Image previews with delete */}
                 {form.image_url && (
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-                    {form.image_url.split("\n").map((url, i) => url.trim() && (
-                      <img key={i} src={url.trim()} style={{ width: 48, height: 48, objectFit: "contain", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    ))}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                    {form.image_url.split("\n").map((url, i) => {
+                      const trimmed = url.trim();
+                      if (!trimmed) return null;
+                      return (
+                        <div key={i} style={{ position: "relative", width: 64, height: 64 }}>
+                          <img src={trimmed}
+                            style={{ width: 64, height: 64, objectFit: "contain", border: "1.5px solid #e2e8f0", borderRadius: 8, background: "#f8fafc" }}
+                            onError={e => { (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%23fee2e2'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23dc2626' font-size='24'%3E❌%3C/text%3E%3C/svg%3E"; }}
+                          />
+                          <button
+                            onClick={() => {
+                              if (!confirm("Remove this image?")) return;
+                              const lines = form.image_url.split("\n").filter((_, idx) => idx !== i);
+                              setForm(f => ({ ...f, image_url: lines.join("\n") }));
+                            }}
+                            style={{
+                              position: "absolute", top: -6, right: -6,
+                              background: "#dc2626", border: "none", color: "#fff",
+                              borderRadius: "50%", width: 18, height: 18, fontSize: 10,
+                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                              fontWeight: 800, lineHeight: 1,
+                            }}
+                          >✕</button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -748,24 +781,32 @@ export default function AdminPage() {
                 <label style={labelStyle}>Video</label>
                 <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                   <label style={{
-                    flex: 1, background: "#fdf4ff", border: "2px dashed #d8b4fe", borderRadius: 10,
-                    padding: "10px", textAlign: "center", cursor: "pointer", fontSize: 12,
+                    flex: 1, background: uploadingVideo ? "#f3e8ff" : "#fdf4ff",
+                    border: "2px dashed #d8b4fe", borderRadius: 10,
+                    padding: "10px", textAlign: "center",
+                    cursor: uploadingVideo ? "wait" : "pointer", fontSize: 12,
                     color: "#7c3aed", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                   }}>
                     <input type="file" accept="video/*" style={{ display: "none" }}
+                      disabled={uploadingVideo}
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
-                        const fd = new FormData();
-                        fd.append("file", file);
-                        fd.append("upload_preset", "jg-wholesale");
-                        fd.append("cloud_name", "dklbnna8p");
-                        const res = await fetch("https://api.cloudinary.com/v1_1/dklbnna8p/video/upload", { method: "POST", body: fd });
-                        const data = await res.json();
-                        if (data.secure_url) setForm({ ...form, video_url: data.secure_url });
+                        setUploadingVideo(true);
+                        try {
+                          const fd = new FormData();
+                          fd.append("file", file);
+                          fd.append("upload_preset", "jg-wholesale");
+                          fd.append("cloud_name", "dklbnna8p");
+                          const res = await fetch("https://api.cloudinary.com/v1_1/dklbnna8p/video/upload", { method: "POST", body: fd });
+                          const data = await res.json();
+                          if (data.secure_url) setForm(f => ({ ...f, video_url: data.secure_url }));
+                        } catch {}
+                        setUploadingVideo(false);
+                        e.target.value = "";
                       }}
                     />
-                    🎥 Upload Video
+                    {uploadingVideo ? "⏳ Uploading video..." : "🎥 Upload Video"}
                   </label>
                 </div>
                 <input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })} placeholder="https://example.com/video.mp4 (or upload above)" style={inputStyle} />

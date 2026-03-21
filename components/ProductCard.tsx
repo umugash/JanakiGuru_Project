@@ -34,9 +34,7 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
     ...(product.video_url ? [product.video_url] : []),
   ];
 
-  // Use website_price if set, otherwise fall back to in-store price
-  const displayPrice = product.website_price || product.price;
-
+  // All useState hooks first
   const [current, setCurrent] = useState(0);
   const [next, setNext] = useState<number | null>(null);
   const [dir, setDir] = useState<"left" | "right">("left");
@@ -45,16 +43,34 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
   const [fsIndex, setFsIndex] = useState(0);
   const [fsClosing, setFsClosing] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [showVariants, setShowVariants] = useState(false);
+  const [selectedVariant, setSelectedVariant] = useState<{label:string,price:number,index:number}|null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockRef = useRef(false);
-
   // Swipe support refs
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const fsTouchStartX = useRef(0);
 
-  const discount = product.mrp > displayPrice
-    ? Math.round(((product.mrp - displayPrice) / product.mrp) * 100)
+  // Computed values (after hooks)
+  const displayPrice = product.website_price || product.price;
+  const variants = (() => {
+    const vt = (product as any).variants_text;
+    if (!vt) return [];
+    return vt.split(",").map((v: string) => {
+      const parts = v.trim().split(":");
+      if (parts.length < 2) return null;
+      const price = Number(parts[parts.length - 1].trim());
+      const label = parts.slice(0, -1).join(":").trim();
+      if (!label || isNaN(price)) return null;
+      return { label, price };
+    }).filter(Boolean);
+  })();
+  const hasVariants = variants.length > 0;
+  const activePrice = selectedVariant ? selectedVariant.price : displayPrice;
+
+  const discount = product.mrp > activePrice
+    ? Math.round(((product.mrp - activePrice) / product.mrp) * 100)
     : 0;
 
   const slideTo = (nextIdx: number, direction: "left" | "right") => {
@@ -259,6 +275,14 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             ) : (
               <img src={fsSrc} alt={product.name}
                 style={{ width: "100%", display: "block", maxHeight: "65vh", objectFit: "contain", padding: 12 }}
+                onError={e => {
+                  const img = e.target as HTMLImageElement;
+                  // Try direct URL without referrer restriction
+                  if (!img.dataset.retried) {
+                    img.dataset.retried = "1";
+                    img.src = fsSrc + (fsSrc.includes("?") ? "&" : "?") + "_t=" + Date.now();
+                  }
+                }}
               />
             )}
           </div>
@@ -392,11 +416,22 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
           )}
 
           {isVideo(currentSrc) && (
-            <div style={{
-              position: "absolute", bottom: 6, left: 6,
-              background: "rgba(220,38,38,0.85)", color: "#fff",
-              fontSize: 9, fontWeight: 700, borderRadius: 10, padding: "2px 6px", zIndex: 10,
-            }}>▶ VIDEO</div>
+            <>
+              <div style={{
+                position: "absolute", top: "50%", left: "50%",
+                transform: "translate(-50%,-50%)",
+                background: "rgba(255,255,255,0.92)", borderRadius: "50%",
+                width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center",
+                zIndex: 10, boxShadow: "0 2px 12px rgba(0,0,0,0.25)", pointerEvents: "none",
+              }}>
+                <div style={{ width: 0, height: 0, borderTop: "9px solid transparent", borderBottom: "9px solid transparent", borderLeft: "16px solid #dc2626", marginLeft: 3 }} />
+              </div>
+              <div style={{
+                position: "absolute", bottom: 6, left: 6,
+                background: "rgba(220,38,38,0.85)", color: "#fff",
+                fontSize: 9, fontWeight: 700, borderRadius: 10, padding: "2px 6px", zIndex: 10,
+              }}>▶ VIDEO</div>
+            </>
           )}
         </div>
 
@@ -409,19 +444,28 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             WebkitBoxOrient: "vertical", overflow: "hidden",
           }}>{product.name}</div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626" }}>₹{displayPrice}</span>
-            {product.mrp > displayPrice && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626" }}>₹{activePrice}</span>
+            {product.mrp > activePrice && (
               <span style={{ fontSize: 10, color: "#9ca3af", textDecoration: "line-through" }}>₹{product.mrp}</span>
             )}
+            {selectedVariant && <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 600 }}>{selectedVariant.label}</span>}
           </div>
 
           {cartQuantity === 0 ? (
-            <button onClick={() => onAddToCart(product)} style={{
-              width: "100%", background: "linear-gradient(135deg,#ef4444,#b91c1c)",
-              color: "#fff", border: "none", borderRadius: 8, padding: "7px 0",
-              fontSize: 12, fontWeight: 700, cursor: "pointer",
-            }}>ADD +</button>
+            <div>
+              <button onClick={() => hasVariants ? setShowVariants(true) : onAddToCart(product)} style={{
+                width: "100%", background: "linear-gradient(135deg,#ef4444,#b91c1c)",
+                color: "#fff", border: "none", borderRadius: 8, padding: "7px 0",
+                fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: hasVariants ? 3 : 0,
+              }}>ADD +</button>
+              {hasVariants && (
+                <button onClick={() => setShowVariants(true)} style={{
+                  width: "100%", background: "none", border: "none",
+                  color: "#6b7280", fontSize: 10, fontWeight: 600, cursor: "pointer", padding: "2px 0",
+                }}>{variants.length} options ▼</button>
+              )}
+            </div>
           ) : (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -430,6 +474,43 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
               <button onClick={() => onDecrement(product)} style={{ background: "none", border: "none", color: "#dc2626", fontSize: 18, fontWeight: 800, width: 32, height: 30, cursor: "pointer" }}>−</button>
               <span style={{ fontSize: 13, fontWeight: 700, color: "#dc2626" }}>{cartQuantity}</span>
               <button onClick={() => onIncrement(product)} style={{ background: "none", border: "none", color: "#dc2626", fontSize: 18, fontWeight: 800, width: 32, height: 30, cursor: "pointer" }}>+</button>
+            </div>
+          )}
+
+          {/* Variants bottom sheet */}
+          {showVariants && hasVariants && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+              onClick={() => setShowVariants(false)}>
+              <div style={{ background: "#fff", borderRadius: "20px 20px 0 0", padding: 20, width: "100%", maxWidth: 480 }}
+                onClick={e => e.stopPropagation()}>
+                <div style={{ width: 40, height: 4, background: "#e2e8f0", borderRadius: 2, margin: "0 auto 16px" }} />
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>{product.name}</div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 16 }}>Select variant</div>
+                {variants.map((v: any, i: number) => {
+                  const varImg = (product.image_url || [])[i] || (product.image_url || [])[0];
+                  return (
+                    <div key={i} style={{
+                      display: "flex", alignItems: "center", gap: 12, padding: "12px 0",
+                      borderBottom: i < variants.length - 1 ? "1px solid #f1f5f9" : "none",
+                    }}>
+                      {varImg && <img src={varImg} style={{ width: 52, height: 52, objectFit: "contain", border: "1px solid #fee2e2", borderRadius: 8 }} />}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{v.label}</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#dc2626" }}>₹{v.price}</div>
+                      </div>
+                      <button onClick={() => {
+                        setSelectedVariant({ label: v.label, price: v.price, index: i });
+                        onAddToCart({ ...product, price: v.price, website_price: v.price });
+                        setShowVariants(false);
+                      }} style={{
+                        background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff",
+                        border: "none", borderRadius: 8, padding: "8px 16px",
+                        fontSize: 13, fontWeight: 700, cursor: "pointer",
+                      }}>ADD</button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
