@@ -218,6 +218,13 @@ export default function AdminPage() {
     if (!form.name.trim() || !form.price || !form.mrp || selectedCategories.length === 0) {
       setMsg({ text: "⚠ Please fill Name, Price, MRP and at least one Category", type: "error" }); return;
     }
+    // Check duplicate product name (only when adding new, not editing)
+    if (!editId) {
+      const duplicate = products.find(p => p.name.trim().toLowerCase() === form.name.trim().toLowerCase());
+      if (duplicate) {
+        setMsg({ text: `❌ Product "${form.name.trim()}" already exists! Edit the existing product instead.`, type: "error" }); return;
+      }
+    }
     setSaving(true);
     setMsg({ text: "", type: "" });
 
@@ -728,7 +735,7 @@ export default function AdminPage() {
                           fd.append("key", "6305b0abbb13f94c9396a3f995b73b34");
                           const res = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: fd });
                           const data = await res.json();
-                          if (data.data?.url) urls.push(data.data.url);
+                          if (data.data?.display_url) urls.push(data.data.display_url);
                         } catch {}
                       }
                       const existing = form.image_url.trim();

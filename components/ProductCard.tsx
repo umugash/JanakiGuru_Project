@@ -114,7 +114,7 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
 
   useEffect(() => {
     if (media.length <= 1) return;
-    if (isVideo(media[current])) return;
+    if (isVideo(media[current])) return; // Videos advance via onEnded
     timerRef.current = setTimeout(() => {
       slideTo((current + 1) % media.length, "left");
     }, 3000);
@@ -341,7 +341,8 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             <>
               <div style={{ position: "absolute", inset: 0, animation: currentAnim, zIndex: 1 }}>
                 {isVideo(currentSrc) ? (
-                  <video src={currentSrc} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  <video src={currentSrc} style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                    onEnded={() => slideTo((current + 1) % media.length, "left")} />
                 ) : (
                   <img src={currentSrc} alt={product.name}
                     style={{ width: "100%", height: "100%", objectFit: "contain", padding: 6 }}
