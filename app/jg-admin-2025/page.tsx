@@ -21,12 +21,12 @@ interface Order {
   items: any[]; total_amount: number; created_at: string;
 }
 interface StaffUser {
-  id: string; name: string; password: string; status: string; created_at: string;
+  id: string; name: string; password: string; status: string; created_at: string; show_purchase_price?: boolean;
 }
 
 const emptyForm = {
   name: "", price: "", mrp: "", wholesale_price: "", purchase_price: "",
-  website_price: "", barcode: "",
+  website_price: "", barcodes: "", variants: "",
   category: "", image_url: "", video_url: "", keywords: "",
   short_description: "", long_description: "",
 };
@@ -189,7 +189,8 @@ export default function AdminPage() {
       short_description: (p as any).short_description || "",
       long_description: (p as any).long_description || "",
       website_price: (p as any).website_price ? String((p as any).website_price) : "",
-      barcode: (p as any).barcode || "",
+      barcodes: Array.isArray((p as any).barcodes) ? (p as any).barcodes.join(", ") : ((p as any).barcode || ""),
+      variants: (p as any).variants_text || "",
     });
     // Load vendors
     const existingVendors = Array.isArray((p as any).vendors) ? (p as any).vendors : [];
@@ -229,7 +230,9 @@ export default function AdminPage() {
       wholesale_price: form.wholesale_price ? form.wholesale_price.trim() : null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
       website_price: form.website_price ? Number(form.website_price) : null,
-      barcode: form.barcode.trim() || null,
+      barcodes: form.barcodes ? form.barcodes.split(",").map((s) => s.trim()).filter(Boolean) : [],
+      barcode: form.barcodes ? form.barcodes.split(",").map((s) => s.trim()).filter(Boolean)[0] || null : null,
+      variants_text: form.variants.trim() || null,
       category: selectedCategories,
       image_url: form.image_url.split("\n").map((s: string) => s.trim()).filter(Boolean),
       video_url: form.video_url.trim() || null,
@@ -264,13 +267,14 @@ export default function AdminPage() {
 
   const filteredAdminProducts = products.filter(p => {
     if (!adminSearch.trim()) return true;
-    const q = adminSearch.toLowerCase();
-    const nameMatch = p.name?.toLowerCase().includes(q);
-    const barcodeMatch = (p as any).barcode?.toLowerCase().includes(q);
-    const keywordMatch = Array.isArray(p.keywords)
-      ? (p.keywords as string[]).some(k => k.toLowerCase().includes(q))
-      : String(p.keywords || "").toLowerCase().includes(q);
-    return nameMatch || barcodeMatch || keywordMatch;
+    const words = adminSearch.toLowerCase().trim().split(" ").filter(Boolean);
+    const searchText = [
+      p.name || "",
+      (p as any).barcode || "",
+      ...(Array.isArray((p as any).barcodes) ? (p as any).barcodes : []),
+      ...(Array.isArray(p.keywords) ? p.keywords as string[] : [String(p.keywords || "")]),
+    ].join(" ").toLowerCase();
+    return words.every(word => searchText.includes(word));
   });
 
   const activeStaff = staffUsers.filter(s => s.status === "active");
@@ -456,9 +460,26 @@ export default function AdminPage() {
                           <button onClick={() => setShowStaffPassword(showStaffPassword === s.id ? null : s.id)} style={{ background: "none", border: "none", fontSize: 11, color: "#94a3b8", cursor: "pointer", padding: 0 }}>{showStaffPassword === s.id ? "hide" : "show"}</button>
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => { setStaffForm({ name: s.name, password: s.password }); setStaffEditId(s.id); setShowStaffForm(true); }} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✏️</button>
-                        <button onClick={() => revokeStaff(s.id)} style={{ background: "#fff5f5", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Revoke</button>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => { setStaffForm({ name: s.name, password: s.password }); setStaffEditId(s.id); setShowStaffForm(true); }} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✏️</button>
+                          <button onClick={() => revokeStaff(s.id)} style={{ background: "#fff5f5", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Revoke</button>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 10, color: "#64748b" }}>Purchase Price</span>
+                          <button
+                            onClick={async () => {
+                              const newVal = !(s.show_purchase_price !== false);
+                              await supabase.from("staff_users").update({ show_purchase_price: newVal }).eq("id", s.id);
+                              fetchStaff();
+                            }}
+                            style={{
+                              background: s.show_purchase_price !== false ? "#16a34a" : "#94a3b8",
+                              border: "none", borderRadius: 20, padding: "3px 10px",
+                              color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                            }}
+                          >{s.show_purchase_price !== false ? "ON" : "OFF"}</button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -508,9 +529,9 @@ export default function AdminPage() {
                   <input value={form.name} onChange={e => { const v = e.target.value; setForm({ ...form, name: v.charAt(0).toUpperCase() + v.slice(1) }); }} placeholder="e.g. Apsara Pencil" style={inputStyle} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Barcode (optional)</label>
-                  <input value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} placeholder="Scan or type barcode" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Used for barcode scanner search</div>
+                  <label style={labelStyle}>Barcodes (comma separated)</label>
+                  <input value={form.barcodes} onChange={e => setForm({ ...form, barcodes: e.target.value })} placeholder="123456, 789012, 345678" style={inputStyle} />
+                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Multiple barcodes OK — separate with comma</div>
                 </div>
               </div>
 
@@ -544,6 +565,12 @@ export default function AdminPage() {
                   <input type="number" value={form.purchase_price} onChange={e => setForm({ ...form, purchase_price: e.target.value })} placeholder="60" style={inputStyle} />
                   <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Staff-only (encoded)</div>
                 </div>
+              </div>
+              {/* Variants */}
+              <div style={{ marginBottom: 14, background: "#f0f9ff", borderRadius: 12, padding: 14, border: "1.5px solid #bae6fd" }}>
+                <label style={{ ...labelStyle, color: "#0369a1", marginBottom: 6, display: "block" }}>📦 Price Variants (optional)</label>
+                <input value={form.variants} onChange={e => setForm({ ...form, variants: e.target.value })} placeholder="1 pc:5, 1 box:48, 1 dozen:55" style={{ ...inputStyle, background: "#fff" }} />
+                <div style={{ fontSize: 10, color: "#0369a1", marginTop: 4 }}>Format: label:price — e.g. "1 pc:5, 1 box:48"</div>
               </div>
 
               {/* ── VENDOR PRICES ── */}
@@ -675,16 +702,73 @@ export default function AdminPage() {
                 <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Select multiple. New categories auto-capitalize.</div>
               </div>
 
-              {/* Images */}
+              {/* Images with upload */}
               <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Image URLs (one per line)</label>
-                <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} placeholder={"https://example.com/img1.jpg\nhttps://example.com/img2.jpg"} rows={4} style={{ ...inputStyle, resize: "vertical" as const }} />
+                <label style={labelStyle}>Images</label>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <label style={{
+                    flex: 1, background: "#eff6ff", border: "2px dashed #93c5fd", borderRadius: 10,
+                    padding: "10px", textAlign: "center", cursor: "pointer", fontSize: 12,
+                    color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  }}>
+                    <input type="file" accept="image/*" multiple style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        const urls: string[] = [];
+                        for (const file of files) {
+                          const fd = new FormData();
+                          fd.append("image", file);
+                          fd.append("key", "6305b0abbb13f94c9396a3f995b73b34");
+                          const res = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: fd });
+                          const data = await res.json();
+                          if (data.data?.url) urls.push(data.data.url);
+                        }
+                        const existing = form.image_url.trim();
+                        const combined = existing ? existing + "\n" + urls.join("\n") : urls.join("\n");
+                        setForm({ ...form, image_url: combined });
+                      }}
+                    />
+                    📷 Upload Images
+                  </label>
+                </div>
+                <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })}
+                  placeholder={"https://example.com/img1.jpg\nhttps://example.com/img2.jpg\n(or upload above)"}
+                  rows={3} style={{ ...inputStyle, resize: "vertical" as const }} />
+                {form.image_url && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                    {form.image_url.split("\n").map((url, i) => url.trim() && (
+                      <img key={i} src={url.trim()} style={{ width: 48, height: 48, objectFit: "contain", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* Video */}
+              {/* Video with upload */}
               <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Video URL (optional)</label>
-                <input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })} placeholder="https://example.com/video.mp4" style={inputStyle} />
+                <label style={labelStyle}>Video</label>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <label style={{
+                    flex: 1, background: "#fdf4ff", border: "2px dashed #d8b4fe", borderRadius: 10,
+                    padding: "10px", textAlign: "center", cursor: "pointer", fontSize: 12,
+                    color: "#7c3aed", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  }}>
+                    <input type="file" accept="video/*" style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const fd = new FormData();
+                        fd.append("file", file);
+                        fd.append("upload_preset", "jg-wholesale");
+                        fd.append("cloud_name", "dklbnna8p");
+                        const res = await fetch("https://api.cloudinary.com/v1_1/dklbnna8p/video/upload", { method: "POST", body: fd });
+                        const data = await res.json();
+                        if (data.secure_url) setForm({ ...form, video_url: data.secure_url });
+                      }}
+                    />
+                    🎥 Upload Video
+                  </label>
+                </div>
+                <input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })} placeholder="https://example.com/video.mp4 (or upload above)" style={inputStyle} />
               </div>
 
               {/* Keywords */}

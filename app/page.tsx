@@ -63,11 +63,13 @@ export default function Home() {
     let filtered = products;
     if (selectedCategory !== "All") filtered = filtered.filter(p => parseProductCategories(p.category).includes(selectedCategory));
     if (searchTerm.trim() !== "") {
-      const term = searchTerm.toLowerCase();
+      const words = searchTerm.toLowerCase().trim().split(" ").filter(Boolean);
       filtered = filtered.filter(p => {
-        const nameMatch = p.name.toLowerCase().includes(term);
-        const keywordMatch = p.keywords?.some((k: string) => k.toLowerCase().includes(term));
-        return nameMatch || keywordMatch;
+        const searchText = [
+          p.name || "",
+          ...(p.keywords || []),
+        ].join(" ").toLowerCase();
+        return words.every(word => searchText.includes(word));
       });
     }
     setFilteredProducts(filtered);
