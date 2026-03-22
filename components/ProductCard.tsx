@@ -34,7 +34,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
     ...(product.video_url ? [product.video_url] : []),
   ];
 
-  // All useState hooks first
   const [current, setCurrent] = useState(0);
   const [next, setNext] = useState<number | null>(null);
   const [dir, setDir] = useState<"left" | "right">("left");
@@ -44,32 +43,56 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
   const [fsClosing, setFsClosing] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showVariants, setShowVariants] = useState(false);
-  const [selectedVariant, setSelectedVariant] = useState<{label:string,price:number,index:number}|null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<{ label: string; price: number; index: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockRef = useRef(false);
-  // Swipe support refs
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const fsTouchStartX = useRef(0);
 
-  // Computed values (after hooks)
-  const displayPrice = product.website_price || product.price;
+  // ── PRICE PRIORITY: website_price → variant prices joined → retail price ──
   const variants = (() => {
     const vt = (product as any).variants_text;
     if (!vt) return [];
-    return vt.split(",").map((v: string) => {
+    return String(vt).split(",").map((v: string) => {
       const parts = v.trim().split(":");
       if (parts.length < 2) return null;
       const price = Number(parts[parts.length - 1].trim());
       const label = parts.slice(0, -1).join(":").trim();
       if (!label || isNaN(price)) return null;
       return { label, price };
-    }).filter(Boolean);
+    }).filter(Boolean) as { label: string; price: number }[];
   })();
-  const hasVariants = variants.length > 0;
-  const activePrice = selectedVariant ? selectedVariant.price : displayPrice;
 
-  const discount = product.mrp > activePrice
+  const hasVariants = variants.length > 0;
+
+  const getDisplayPrice = (): { main: number | string; isSlash: boolean } => {
+    // 1. Website price takes priority
+    if (product.website_price) {
+      return { main: product.website_price, isSlash: false };
+    }
+    // 2. Variant prices joined with /  e.g. "48/450"
+    if (hasVariants) {
+      if (variants.length === 1) {
+        return { main: variants[0].price, isSlash: false };
+      }
+      return { main: variants.map(v => v.price).join("/"), isSlash: true };
+    }
+    // 3. Fallback: retail/store price
+    return { main: product.price, isSlash: false };
+  };
+
+  const priceDisplay = getDisplayPrice();
+  const displayPrice = priceDisplay.main;
+
+  // For cart/discount calc, use numeric price only
+  const numericDisplayPrice = selectedVariant
+    ? selectedVariant.price
+    : (typeof displayPrice === "number" ? displayPrice : product.price);
+
+  const activePrice = numericDisplayPrice;
+
+  const discount = !priceDisplay.isSlash && !selectedVariant && product.mrp > activePrice
     ? Math.round(((product.mrp - activePrice) / product.mrp) * 100)
     : 0;
 
@@ -97,7 +120,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
     slideTo((current + 1) % media.length, "left");
   };
 
-  // Touch handlers for card swipe
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
@@ -114,7 +136,7 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
 
   useEffect(() => {
     if (media.length <= 1) return;
-    if (isVideo(media[current])) return; // Videos advance via onEnded
+    if (isVideo(media[current])) return;
     timerRef.current = setTimeout(() => {
       slideTo((current + 1) % media.length, "left");
     }, 3000);
@@ -130,7 +152,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
     setFsIndex(i => (i + 1) % media.length);
   };
 
-  // Fullscreen swipe handlers
   const handleFsTouchStart = (e: React.TouchEvent) => {
     fsTouchStartX.current = e.touches[0].clientX;
   };
@@ -227,7 +248,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             alignItems: "center", justifyContent: "center",
           }}
         >
-          {/* Top bar */}
           <div style={{
             position: "absolute", top: 0, left: 0, right: 0,
             background: "linear-gradient(135deg,#ef4444,#b91c1c)",
@@ -256,7 +276,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             </div>
           </div>
 
-          {/* Image */}
           <div
             className={fsClosing ? "fs-content-out" : "fs-content"}
             onClick={e => e.stopPropagation()}
@@ -277,7 +296,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
                 style={{ width: "100%", display: "block", maxHeight: "65vh", objectFit: "contain", padding: 12 }}
                 onError={e => {
                   const img = e.target as HTMLImageElement;
-                  // Try direct URL without referrer restriction
                   if (!img.dataset.retried) {
                     img.dataset.retried = "1";
                     img.src = fsSrc + (fsSrc.includes("?") ? "&" : "?") + "_t=" + Date.now();
@@ -287,7 +305,6 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             )}
           </div>
 
-          {/* Swipe hint + dots */}
           {media.length > 1 && (
             <div onClick={e => e.stopPropagation()} style={{
               position: "absolute", bottom: 16, left: 0, right: 0,
@@ -323,7 +340,7 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
         boxShadow: "0 2px 10px rgba(220,38,38,0.08)", border: "1.5px solid #fee2e2",
         display: "flex", flexDirection: "column",
       }}>
-        {/* IMAGE AREA with swipe */}
+        {/* IMAGE AREA */}
         <div
           className="card-img-area"
           onClick={openFullscreen}
@@ -445,12 +462,28 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
             WebkitBoxOrient: "vertical", overflow: "hidden",
           }}>{product.name}</div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626" }}>₹{activePrice}</span>
-            {product.mrp > activePrice && (
-              <span style={{ fontSize: 10, color: "#9ca3af", textDecoration: "line-through" }}>₹{product.mrp}</span>
+          {/* ── PRICE DISPLAY ── */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
+            {selectedVariant ? (
+              // After selecting a variant: show that variant's price
+              <>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626" }}>₹{selectedVariant.price}</span>
+                <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 600 }}>{selectedVariant.label}</span>
+              </>
+            ) : (
+              // Default: show priority price
+              <>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626" }}>₹{displayPrice}</span>
+                {/* Show MRP strikethrough only when it's a single numeric price and there's a discount */}
+                {!priceDisplay.isSlash && typeof displayPrice === "number" && product.mrp > displayPrice && (
+                  <span style={{ fontSize: 10, color: "#9ca3af", textDecoration: "line-through" }}>₹{product.mrp}</span>
+                )}
+                {/* Label for website price */}
+                {product.website_price && !priceDisplay.isSlash && (
+                  <span style={{ fontSize: 9, color: "#2563eb", fontWeight: 700, background: "#eff6ff", borderRadius: 6, padding: "1px 5px" }}>online</span>
+                )}
+              </>
             )}
-            {selectedVariant && <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 600 }}>{selectedVariant.label}</span>}
           </div>
 
           {cartQuantity === 0 ? (
@@ -487,7 +520,7 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
                 <div style={{ width: 40, height: 4, background: "#e2e8f0", borderRadius: 2, margin: "0 auto 16px" }} />
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>{product.name}</div>
                 <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 16 }}>Select variant</div>
-                {variants.map((v: any, i: number) => {
+                {variants.map((v, i) => {
                   const varImg = (product.image_url || [])[i] || (product.image_url || [])[0];
                   return (
                     <div key={i} style={{

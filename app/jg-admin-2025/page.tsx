@@ -59,7 +59,6 @@ export default function AdminPage() {
   const [staffMsg, setStaffMsg] = useState({ text: "", type: "" });
   const [showStaffForm, setShowStaffForm] = useState(false);
   const [showStaffPassword, setShowStaffPassword] = useState<string | null>(null);
-  // Cipher settings
   const [cipherKey, setCipherKey] = useState("ROYALTIMES");
   const [cipherInput, setCipherInput] = useState("");
   const [cipherMsg, setCipherMsg] = useState({ text: "", type: "" });
@@ -145,13 +144,11 @@ export default function AdminPage() {
 
   function getCatStr(cat: any): string {
     if (!cat) return "";
-    // Already array
     if (Array.isArray(cat)) {
       return cat.map(String).map(s => s.replace(/^["\[\]\\]+|["\[\]\\]+$/g, "").trim()).filter(Boolean).join(", ");
     }
     if (typeof cat === "string") {
       let str = cat.trim().replace(/\\/g, "");
-      // Try JSON parse
       try {
         const parsed = JSON.parse(str);
         if (Array.isArray(parsed)) {
@@ -159,7 +156,6 @@ export default function AdminPage() {
         }
         if (typeof parsed === "string") return parsed.trim();
       } catch {}
-      // Strip brackets and quotes
       str = str.replace(/^[\["']+|[\]"']+$/g, "").trim();
       return str.split(",").map(s => s.replace(/^["'\s]+|["'\s]+$/g, "").trim()).filter(Boolean).join(", ");
     }
@@ -194,11 +190,9 @@ export default function AdminPage() {
       barcodes: Array.isArray((p as any).barcodes) ? (p as any).barcodes.join(", ") : ((p as any).barcode || ""),
       variants: (p as any).variants_text || "",
     });
-    // Load vendors
     const existingVendors = Array.isArray((p as any).vendors) ? (p as any).vendors : [];
     setVendors(existingVendors.map((v: any) => ({ name: v.name, price: String(v.price) })));
-    // Load categories as array
-    const cats = Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim()).filter(Boolean);
+    const cats = Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim()).filter(Boolean);
     setSelectedCategories(cats);
     setCategoryInput("");
     setEditId(p.id); setTab("addproduct"); setMsg({ text: "", type: "" });
@@ -218,7 +212,6 @@ export default function AdminPage() {
     if (!form.name.trim() || !form.price || !form.mrp || selectedCategories.length === 0) {
       setMsg({ text: "⚠ Please fill Name, Price, MRP and at least one Category", type: "error" }); return;
     }
-    // Check duplicate product name (only when adding new, not editing)
     if (!editId) {
       const duplicate = products.find(p => p.name.trim().toLowerCase() === form.name.trim().toLowerCase());
       if (duplicate) {
@@ -575,6 +568,7 @@ export default function AdminPage() {
                   <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Staff-only (encoded)</div>
                 </div>
               </div>
+
               {/* Variants */}
               <div style={{ marginBottom: 14, background: "#f0f9ff", borderRadius: 12, padding: 14, border: "1.5px solid #bae6fd" }}>
                 <label style={{ ...labelStyle, color: "#0369a1", marginBottom: 6, display: "block" }}>📦 Price Variants (optional)</label>
@@ -582,7 +576,7 @@ export default function AdminPage() {
                 <div style={{ fontSize: 10, color: "#0369a1", marginTop: 4 }}>Format: label:price — e.g. "1 pc:5, 1 box:48"</div>
               </div>
 
-              {/* ── VENDOR PRICES ── */}
+              {/* Vendor Prices */}
               <div style={{ marginBottom: 14, background: "#f8f4ff", borderRadius: 12, padding: 14, border: "1.5px solid #e9d5ff" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                   <label style={{ ...labelStyle, color: "#7c3aed", marginBottom: 0 }}>🏪 Vendor Prices ({vendors.length}/5)</label>
@@ -594,39 +588,25 @@ export default function AdminPage() {
                     }}>+ Add Vendor</button>
                   )}
                 </div>
-
                 {vendors.length === 0 && (
                   <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", padding: "8px 0" }}>
                     No vendors added. Click "+ Add Vendor" to add up to 5 vendor prices.
                   </div>
                 )}
-
                 {vendors.map((v, i) => (
                   <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-end" }}>
                     <div style={{ flex: 2 }}>
                       {i === 0 && <label style={{ ...labelStyle, fontSize: 10 }}>Vendor Name</label>}
-                      <input
-                        value={v.name}
-                        onChange={e => updateVendor(i, "name", e.target.value)}
-                        placeholder={`Vendor ${i + 1} name`}
-                        style={{ ...inputStyle, background: "#fff" }}
-                      />
+                      <input value={v.name} onChange={e => updateVendor(i, "name", e.target.value)} placeholder={`Vendor ${i + 1} name`} style={{ ...inputStyle, background: "#fff" }} />
                     </div>
                     <div style={{ flex: 1 }}>
                       {i === 0 && <label style={{ ...labelStyle, fontSize: 10 }}>Price (₹)</label>}
-                      <input
-                        type="number"
-                        value={v.price}
-                        onChange={e => updateVendor(i, "price", e.target.value)}
-                        placeholder="0"
-                        style={{ ...inputStyle, background: "#fff" }}
-                      />
+                      <input type="number" value={v.price} onChange={e => updateVendor(i, "price", e.target.value)} placeholder="0" style={{ ...inputStyle, background: "#fff" }} />
                     </div>
                     <button onClick={() => removeVendor(i)} style={{
                       background: "#fff5f5", border: "1px solid #fca5a5",
                       color: "#dc2626", borderRadius: 8, padding: "10px 10px",
                       fontSize: 14, cursor: "pointer", flexShrink: 0,
-                      marginBottom: 0,
                     }}>✕</button>
                   </div>
                 ))}
@@ -635,8 +615,6 @@ export default function AdminPage() {
               {/* Smart Category Dropdown */}
               <div style={{ marginBottom: 14, position: "relative" }}>
                 <label style={labelStyle}>Categories * (select or create new)</label>
-
-                {/* Selected category pills */}
                 {selectedCategories.length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                     {selectedCategories.map((cat, i) => (
@@ -648,8 +626,6 @@ export default function AdminPage() {
                     ))}
                   </div>
                 )}
-
-                {/* Search input */}
                 <div style={{ position: "relative" }}>
                   <input
                     value={categoryInput}
@@ -659,50 +635,37 @@ export default function AdminPage() {
                     placeholder="Type to search or create category..."
                     style={inputStyle}
                   />
-
-                  {/* Dropdown */}
                   {showCatDropdown && (
                     <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "2px solid #e2e8f0", borderRadius: 10, zIndex: 100, maxHeight: 200, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", marginTop: 2 }}>
-                      {/* Existing matching categories */}
                       {products
-                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim()))
+                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim()))
                         .filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx)
                         .filter(cat => !categoryInput || cat.toLowerCase().includes(categoryInput.toLowerCase()))
                         .filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase()))
                         .sort()
                         .map((cat, i) => (
                           <div key={i}
-                            onMouseDown={() => {
-                              setSelectedCategories(prev => [...prev, cat]);
-                              setCategoryInput("");
-                              setShowCatDropdown(false);
-                            }}
+                            onMouseDown={() => { setSelectedCategories(prev => [...prev, cat]); setCategoryInput(""); setShowCatDropdown(false); }}
                             style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#1e293b", fontWeight: 500, borderBottom: "1px solid #f1f5f9" }}
                             onMouseEnter={e => (e.currentTarget.style.background = "#fff5f5")}
                             onMouseLeave={e => (e.currentTarget.style.background = "#fff")}
-                          >
-                            {cat}
-                          </div>
+                          >{cat}</div>
                         ))
                       }
-                      {/* Create new option */}
                       {categoryInput.trim() && !products
-                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim()))
+                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim()))
                         .some(c => c.toLowerCase() === categoryInput.trim().toLowerCase()) &&
                         !selectedCategories.some(s => s.toLowerCase() === categoryInput.trim().toLowerCase()) && (
                         <div
                           onMouseDown={() => {
                             const newCat = categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase();
                             setSelectedCategories(prev => [...prev, newCat]);
-                            setCategoryInput("");
-                            setShowCatDropdown(false);
+                            setCategoryInput(""); setShowCatDropdown(false);
                           }}
                           style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#16a34a", fontWeight: 600, background: "#f0fdf4", borderTop: "1px solid #e2e8f0" }}
-                        >
-                          ＋ Create "{categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase()}"
-                        </div>
+                        >＋ Create "{categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase()}"</div>
                       )}
-                      {categoryInput.trim() === "" && products.flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s:string) => s.trim())).filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx).filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase())).length === 0 && (
+                      {categoryInput.trim() === "" && products.flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim())).filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx).filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase())).length === 0 && (
                         <div style={{ padding: "10px 14px", fontSize: 12, color: "#94a3b8" }}>Type to create a new category</div>
                       )}
                     </div>
@@ -711,7 +674,7 @@ export default function AdminPage() {
                 <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Select multiple. New categories auto-capitalize.</div>
               </div>
 
-              {/* Images with upload */}
+              {/* ── IMAGES with Postimg upload ── */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Images</label>
                 <label style={{
@@ -730,12 +693,16 @@ export default function AdminPage() {
                       const urls: string[] = [];
                       for (const file of files) {
                         try {
+                          // ── POSTIMG upload (replaces imgbb) ──
                           const fd = new FormData();
-                          fd.append("image", file);
-                          fd.append("key", "6305b0abbb13f94c9396a3f995b73b34");
-                          const res = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: fd });
+                          fd.append("file", file);
+                          const res = await fetch("https://api.postimg.cc/image/upload", {
+                            method: "POST",
+                            headers: { "Accept": "application/json" },
+                            body: fd,
+                          });
                           const data = await res.json();
-                          if (data.data?.display_url) urls.push(data.data.display_url);
+                          if (data.direct_link) urls.push(data.direct_link);
                         } catch {}
                       }
                       const existing = form.image_url.trim();
@@ -748,7 +715,7 @@ export default function AdminPage() {
                   {uploadingImages ? "⏳ Uploading..." : "📷 Upload Images (select multiple)"}
                 </label>
                 <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })}
-                  placeholder={"https://i.ibb.co/xxx/img.jpg\n(paste URLs or upload above)"}
+                  placeholder={"https://i.postimg.cc/xxx/img.jpg\n(paste URLs or upload above)"}
                   rows={2} style={{ ...inputStyle, resize: "vertical" as const }} />
                 {/* Image previews with delete */}
                 {form.image_url && (
@@ -764,7 +731,6 @@ export default function AdminPage() {
                           />
                           <button
                             onClick={() => {
-                              if (!confirm("Remove this image?")) return;
                               const lines = form.image_url.split("\n").filter((_, idx) => idx !== i);
                               setForm(f => ({ ...f, image_url: lines.join("\n") }));
                             }}
@@ -783,7 +749,7 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* Video with upload */}
+              {/* ── VIDEO with preview and remove ── */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Video</label>
                 <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -816,7 +782,63 @@ export default function AdminPage() {
                     {uploadingVideo ? "⏳ Uploading video..." : "🎥 Upload Video"}
                   </label>
                 </div>
-                <input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })} placeholder="https://example.com/video.mp4 (or upload above)" style={inputStyle} />
+                <input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })}
+                  placeholder="https://example.com/video.mp4 (or upload above)" style={inputStyle} />
+
+                {/* ── VIDEO PREVIEW WITH REMOVE ── */}
+                {form.video_url.trim() && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                    <div style={{ position: "relative", width: 96, height: 64 }}>
+                      <div style={{
+                        width: 96, height: 64, borderRadius: 8, overflow: "hidden",
+                        border: "1.5px solid #e2e8f0", background: "#1a1a2e",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        position: "relative",
+                      }}>
+                        {/* Cloudinary thumbnail */}
+                        {form.video_url.includes("cloudinary.com") && (
+                          <img
+                            src={form.video_url
+                              .replace("/video/upload/", "/video/upload/w_96,h_64,c_fill,so_0/")
+                              .replace(/\.(mp4|webm|mov|ogg)$/i, ".jpg")}
+                            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        )}
+                        {/* Play icon overlay */}
+                        <div style={{
+                          position: "absolute", inset: 0,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          background: "rgba(0,0,0,0.25)",
+                        }}>
+                          <div style={{
+                            width: 0, height: 0,
+                            borderTop: "8px solid transparent",
+                            borderBottom: "8px solid transparent",
+                            borderLeft: "14px solid rgba(255,255,255,0.9)",
+                            marginLeft: 3,
+                          }} />
+                        </div>
+                        <div style={{
+                          position: "absolute", bottom: 3, left: 4,
+                          background: "rgba(124,58,237,0.9)", color: "#fff",
+                          fontSize: 8, fontWeight: 700, borderRadius: 6, padding: "1px 5px",
+                        }}>VIDEO</div>
+                      </div>
+                      {/* Remove button */}
+                      <button
+                        onClick={() => setForm(f => ({ ...f, video_url: "" }))}
+                        style={{
+                          position: "absolute", top: -6, right: -6,
+                          background: "#dc2626", border: "none", color: "#fff",
+                          borderRadius: "50%", width: 18, height: 18, fontSize: 10,
+                          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                          fontWeight: 800, lineHeight: 1,
+                        }}
+                      >✕</button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Keywords */}
@@ -825,7 +847,7 @@ export default function AdminPage() {
                 <input value={form.keywords} onChange={e => setForm({ ...form, keywords: e.target.value })} placeholder="pencil, apsara, writing, school" style={inputStyle} />
               </div>
 
-              {/* ── DESCRIPTIONS ── */}
+              {/* Descriptions */}
               <div style={{ marginBottom: 14, background: "#f0fdf4", borderRadius: 12, padding: 14, border: "1.5px solid #86efac" }}>
                 <label style={{ ...labelStyle, color: "#16a34a", marginBottom: 10, display: "block" }}>📋 Product Description</label>
                 <div style={{ marginBottom: 10 }}>
@@ -861,61 +883,54 @@ export default function AdminPage() {
         )}
       </div>
 
-        {/* ── SETTINGS ── */}
-        {tab === "settings" && (
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>⚙️ Settings</div>
-
-            {/* Cipher Key Section */}
-            <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", marginBottom: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>🔐 ROYALTIMES Cipher Key</div>
-              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
-                This 10-character key encodes W/S and Purchase prices in the app. Each character represents a digit (0-9). Default: <strong>ROYALTIMES</strong>
-                <br/>1=R, 2=O, 3=Y, 4=A, 5=L, 6=T, 7=I, 8=M, 9=E, 0=S
-              </div>
-
-              <div style={{ background: "#f8f4ff", borderRadius: 10, padding: 12, marginBottom: 14, border: "1px solid #e9d5ff" }}>
-                <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 700, marginBottom: 6 }}>CURRENT KEY</div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {cipherKey.split("").map((ch, i) => (
-                    <div key={i} style={{ background: "#7c3aed", color: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 800, textAlign: "center", minWidth: 32 }}>
-                      <div style={{ fontSize: 9, opacity: 0.8 }}>{(i + 1) % 10}</div>
-                      <div>{ch}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {cipherMsg.text && (
-                <div style={{ background: cipherMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${cipherMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: cipherMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 12 }}>{cipherMsg.text}</div>
-              )}
-
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>New Cipher Key (exactly 10 unique characters)</label>
-                <input
-                  value={cipherInput}
-                  onChange={e => { setCipherInput(e.target.value.toUpperCase()); setCipherMsg({ text: "", type: "" }); }}
-                  placeholder="ROYALTIMES"
-                  maxLength={10}
-                  style={{ ...inputStyle, fontFamily: "monospace", fontSize: 18, letterSpacing: 4, textTransform: "uppercase" }}
-                />
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
-                  {cipherInput.length}/10 characters
-                  {cipherInput.length === 10 && new Set(cipherInput).size === 10 && <span style={{ color: "#16a34a", marginLeft: 8 }}>✅ Valid key</span>}
-                  {cipherInput.length === 10 && new Set(cipherInput).size !== 10 && <span style={{ color: "#dc2626", marginLeft: 8 }}>❌ Duplicate characters</span>}
-                </div>
-              </div>
-
-              <button onClick={saveCipherKey} disabled={cipherLoading} style={{ width: "100%", background: cipherLoading ? "#a78bfa" : "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff", border: "none", borderRadius: 12, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-                {cipherLoading ? "Saving..." : "🔐 Update Cipher Key"}
-              </button>
-
-              <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
-                ⚠️ After changing, staff will see new codes when they reopen the app
+      {/* ── SETTINGS ── */}
+      {tab === "settings" && (
+        <div style={{ padding: "16px 14px 80px" }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>⚙️ Settings</div>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>🔐 ROYALTIMES Cipher Key</div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
+              This 10-character key encodes W/S and Purchase prices in the app. Each character represents a digit (0-9). Default: <strong>ROYALTIMES</strong>
+              <br />1=R, 2=O, 3=Y, 4=A, 5=L, 6=T, 7=I, 8=M, 9=E, 0=S
+            </div>
+            <div style={{ background: "#f8f4ff", borderRadius: 10, padding: 12, marginBottom: 14, border: "1px solid #e9d5ff" }}>
+              <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 700, marginBottom: 6 }}>CURRENT KEY</div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {cipherKey.split("").map((ch, i) => (
+                  <div key={i} style={{ background: "#7c3aed", color: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 800, textAlign: "center", minWidth: 32 }}>
+                    <div style={{ fontSize: 9, opacity: 0.8 }}>{(i + 1) % 10}</div>
+                    <div>{ch}</div>
+                  </div>
+                ))}
               </div>
             </div>
+            {cipherMsg.text && (
+              <div style={{ background: cipherMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${cipherMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: cipherMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 12 }}>{cipherMsg.text}</div>
+            )}
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>New Cipher Key (exactly 10 unique characters)</label>
+              <input
+                value={cipherInput}
+                onChange={e => { setCipherInput(e.target.value.toUpperCase()); setCipherMsg({ text: "", type: "" }); }}
+                placeholder="ROYALTIMES"
+                maxLength={10}
+                style={{ ...inputStyle, fontFamily: "monospace", fontSize: 18, letterSpacing: 4, textTransform: "uppercase" }}
+              />
+              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
+                {cipherInput.length}/10 characters
+                {cipherInput.length === 10 && new Set(cipherInput).size === 10 && <span style={{ color: "#16a34a", marginLeft: 8 }}>✅ Valid key</span>}
+                {cipherInput.length === 10 && new Set(cipherInput).size !== 10 && <span style={{ color: "#dc2626", marginLeft: 8 }}>❌ Duplicate characters</span>}
+              </div>
+            </div>
+            <button onClick={saveCipherKey} disabled={cipherLoading} style={{ width: "100%", background: cipherLoading ? "#a78bfa" : "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff", border: "none", borderRadius: 12, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+              {cipherLoading ? "Saving..." : "🔐 Update Cipher Key"}
+            </button>
+            <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
+              ⚠️ After changing, staff will see new codes when they reopen the app
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
       {/* Delete modal */}
       {deleteId && (
