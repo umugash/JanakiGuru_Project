@@ -85,7 +85,6 @@ export default function AdminPage() {
     const { data } = await supabase.from("staff_users").select("*").order("created_at", { ascending: false });
     if (data) setStaffUsers(data);
   }
-
   async function fetchCipherKey() {
     const { data } = await supabase.from("cipher_settings").select("cipher_key").eq("id", 1).single();
     if (data?.cipher_key) { setCipherKey(data.cipher_key.toUpperCase()); setCipherInput(data.cipher_key.toUpperCase()); }
@@ -93,12 +92,12 @@ export default function AdminPage() {
 
   async function saveCipherKey() {
     const key = cipherInput.trim().toUpperCase();
-    if (key.length !== 10) { setCipherMsg({ text: "❌ Key must be exactly 10 characters (one per digit 0-9)", type: "error" }); return; }
+    if (key.length !== 10) { setCipherMsg({ text: "❌ Key must be exactly 10 characters", type: "error" }); return; }
     if (new Set(key).size !== 10) { setCipherMsg({ text: "❌ All 10 characters must be unique", type: "error" }); return; }
     setCipherLoading(true);
     const { error } = await supabase.from("cipher_settings").update({ cipher_key: key }).eq("id", 1);
-    if (error) setCipherMsg({ text: "❌ Failed to save: " + error.message, type: "error" });
-    else { setCipherKey(key); setCipherMsg({ text: "✅ Cipher key updated! Staff will see new codes on next app open.", type: "success" }); }
+    if (error) setCipherMsg({ text: "❌ Failed: " + error.message, type: "error" });
+    else { setCipherKey(key); setCipherMsg({ text: "✅ Cipher key updated!", type: "success" }); }
     setCipherLoading(false);
   }
 
@@ -106,36 +105,19 @@ export default function AdminPage() {
     if (!staffForm.name.trim() || !staffForm.password.trim()) {
       setStaffMsg({ text: "⚠ Please enter both name and password", type: "error" }); return;
     }
-    setSaving(true);
-    setStaffMsg({ text: "", type: "" });
+    setSaving(true); setStaffMsg({ text: "", type: "" });
     const payload = { name: staffForm.name.trim(), password: staffForm.password.trim(), status: "active" };
     let error;
-    if (staffEditId) {
-      ({ error } = await supabase.from("staff_users").update(payload).eq("id", staffEditId));
-    } else {
-      ({ error } = await supabase.from("staff_users").insert([payload]));
-    }
+    if (staffEditId) ({ error } = await supabase.from("staff_users").update(payload).eq("id", staffEditId));
+    else ({ error } = await supabase.from("staff_users").insert([payload]));
     if (error) setStaffMsg({ text: "❌ " + error.message, type: "error" });
-    else {
-      setStaffMsg({ text: staffEditId ? "✅ Updated!" : "✅ Staff added!", type: "success" });
-      setStaffForm(emptyStaffForm); setStaffEditId(null); setShowStaffForm(false);
-      fetchStaff();
-    }
+    else { setStaffMsg({ text: staffEditId ? "✅ Updated!" : "✅ Staff added!", type: "success" }); setStaffForm(emptyStaffForm); setStaffEditId(null); setShowStaffForm(false); fetchStaff(); }
     setSaving(false);
   }
 
-  async function revokeStaff(id: string) {
-    await supabase.from("staff_users").update({ status: "revoked" }).eq("id", id);
-    fetchStaff();
-  }
-  async function reactivateStaff(id: string) {
-    await supabase.from("staff_users").update({ status: "active" }).eq("id", id);
-    fetchStaff();
-  }
-  async function deleteStaffUser(id: string) {
-    await supabase.from("staff_users").delete().eq("id", id);
-    fetchStaff();
-  }
+  async function revokeStaff(id: string) { await supabase.from("staff_users").update({ status: "revoked" }).eq("id", id); fetchStaff(); }
+  async function reactivateStaff(id: string) { await supabase.from("staff_users").update({ status: "active" }).eq("id", id); fetchStaff(); }
+  async function deleteStaffUser(id: string) { await supabase.from("staff_users").delete().eq("id", id); fetchStaff(); }
 
   function handleLogin() {
     if (pw === ADMIN_PASSWORD) { sessionStorage.setItem("jg_admin", "1"); setAuthed(true); }
@@ -144,16 +126,12 @@ export default function AdminPage() {
 
   function getCatStr(cat: any): string {
     if (!cat) return "";
-    if (Array.isArray(cat)) {
-      return cat.map(String).map(s => s.replace(/^["\[\]\\]+|["\[\]\\]+$/g, "").trim()).filter(Boolean).join(", ");
-    }
+    if (Array.isArray(cat)) return cat.map(String).map(s => s.replace(/^["\[\]\\]+|["\[\]\\]+$/g, "").trim()).filter(Boolean).join(", ");
     if (typeof cat === "string") {
       let str = cat.trim().replace(/\\/g, "");
       try {
         const parsed = JSON.parse(str);
-        if (Array.isArray(parsed)) {
-          return parsed.map(String).map(s => s.replace(/^["\[\]\\]+|["\[\]\\]+$/g, "").trim()).filter(Boolean).join(", ");
-        }
+        if (Array.isArray(parsed)) return parsed.map(String).map(s => s.replace(/^["\[\]\\]+|["\[\]\\]+$/g, "").trim()).filter(Boolean).join(", ");
         if (typeof parsed === "string") return parsed.trim();
       } catch {}
       str = str.replace(/^[\["']+|[\]"']+$/g, "").trim();
@@ -162,22 +140,17 @@ export default function AdminPage() {
     return "";
   }
 
-  function addVendor() {
-    if (vendors.length >= 5) return;
-    setVendors(v => [...v, { name: "", price: "" }]);
-  }
-
-  function removeVendor(index: number) {
-    setVendors(v => v.filter((_, i) => i !== index));
-  }
-
+  function addVendor() { if (vendors.length < 5) setVendors(v => [...v, { name: "", price: "" }]); }
+  function removeVendor(index: number) { setVendors(v => v.filter((_, i) => i !== index)); }
   function updateVendor(index: number, field: "name" | "price", value: string) {
     setVendors(v => v.map((vendor, i) => i === index ? { ...vendor, [field]: value } : vendor));
   }
 
   function startEdit(p: Product) {
     setForm({
-      name: p.name, price: String(p.price), mrp: String(p.mrp),
+      name: p.name,
+      price: (p as any).price_text || String(p.price),
+      mrp: String(p.mrp),
       wholesale_price: p.wholesale_price ? String(p.wholesale_price) : "",
       purchase_price: p.purchase_price ? String(p.purchase_price) : "",
       category: getCatStr(p.category),
@@ -200,12 +173,8 @@ export default function AdminPage() {
   }
 
   function resetForm() {
-    setForm(emptyForm);
-    setVendors([]);
-    setSelectedCategories([]);
-    setCategoryInput("");
-    setEditId(null);
-    setMsg({ text: "", type: "" });
+    setForm(emptyForm); setVendors([]); setSelectedCategories([]);
+    setCategoryInput(""); setEditId(null); setMsg({ text: "", type: "" });
   }
 
   async function handleSave() {
@@ -214,24 +183,27 @@ export default function AdminPage() {
     }
     if (!editId) {
       const duplicate = products.find(p => p.name.trim().toLowerCase() === form.name.trim().toLowerCase());
-      if (duplicate) {
-        setMsg({ text: `❌ Product "${form.name.trim()}" already exists! Edit the existing product instead.`, type: "error" }); return;
-      }
+      if (duplicate) { setMsg({ text: `❌ Product "${form.name.trim()}" already exists!`, type: "error" }); return; }
     }
-    setSaving(true);
-    setMsg({ text: "", type: "" });
+    setSaving(true); setMsg({ text: "", type: "" });
 
-    const vendorArr = vendors
-      .filter(v => v.name.trim() && v.price)
-      .map(v => ({ name: v.name.trim(), price: Number(v.price) }));
+    const vendorArr = vendors.filter(v => v.name.trim() && v.price).map(v => ({ name: v.name.trim(), price: Number(v.price) }));
+
+    // Store price_text as full string (e.g. "45/420"), price as first numeric value for compat
+    const priceText = form.price.trim();
+    const priceNumeric = Number(priceText.split("/")[0]) || 0;
+
+    // website_price stored as string to support "48/450"
+    const websitePriceText = form.website_price.trim() || null;
 
     const payload: any = {
       name: form.name.trim(),
-      price: Number(form.price),
+      price: priceNumeric,
+      price_text: priceText,
       mrp: Number(form.mrp),
       wholesale_price: form.wholesale_price ? form.wholesale_price.trim() : null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
-      website_price: form.website_price ? Number(form.website_price) : null,
+      website_price: websitePriceText,
       barcodes: form.barcodes ? form.barcodes.split(",").map((s) => s.trim()).filter(Boolean) : [],
       barcode: form.barcodes ? form.barcodes.split(",").map((s) => s.trim()).filter(Boolean)[0] || null : null,
       variants_text: form.variants.trim() || null,
@@ -253,12 +225,10 @@ export default function AdminPage() {
         if (error) throw error;
       }
       setMsg({ text: editId ? "✅ Updated!" : "✅ Product added!", type: "success" });
-      fetchProducts();
-      setSaving(false);
+      fetchProducts(); setSaving(false);
       setTimeout(() => { resetForm(); setTab("products"); setMsg({ text: "", type: "" }); }, 1500);
     } catch (err: any) {
-      setMsg({ text: "❌ " + (err?.message || "Unknown error"), type: "error" });
-      setSaving(false);
+      setMsg({ text: "❌ " + (err?.message || "Unknown error"), type: "error" }); setSaving(false);
     }
   }
 
@@ -270,12 +240,7 @@ export default function AdminPage() {
   const filteredAdminProducts = products.filter(p => {
     if (!adminSearch.trim()) return true;
     const words = adminSearch.toLowerCase().trim().split(" ").filter(Boolean);
-    const searchText = [
-      p.name || "",
-      (p as any).barcode || "",
-      ...(Array.isArray((p as any).barcodes) ? (p as any).barcodes : []),
-      ...(Array.isArray(p.keywords) ? p.keywords as string[] : [String(p.keywords || "")]),
-    ].join(" ").toLowerCase();
+    const searchText = [p.name || "", (p as any).barcode || "", ...(Array.isArray((p as any).barcodes) ? (p as any).barcodes : []), ...(Array.isArray(p.keywords) ? p.keywords as string[] : [String(p.keywords || "")])].join(" ").toLowerCase();
     return words.every(word => searchText.includes(word));
   });
 
@@ -291,8 +256,7 @@ export default function AdminPage() {
           <div style={{ fontSize: 48, marginBottom: 12 }}>🔐</div>
           <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Admin Panel</div>
           <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginBottom: 28 }}>Janaki Guru Enterprises</div>
-          <input type="password" placeholder="Enter admin password" value={pw}
-            onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()}
+          <input type="password" placeholder="Enter admin password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()}
             style={{ width: "100%", background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.15)", borderRadius: 12, padding: "12px 16px", fontSize: 14, color: "#fff", outline: "none", fontFamily: "system-ui,sans-serif", marginBottom: 12, boxSizing: "border-box" }} />
           {pwError && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 10, fontWeight: 600 }}>{pwError}</div>}
           <button onClick={handleLogin} style={{ width: "100%", background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 12, padding: "12px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Login →</button>
@@ -341,15 +305,9 @@ export default function AdminPage() {
             </div>
             <div style={{ position: "relative", marginBottom: 12 }}>
               <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14 }}>🔍</span>
-              <input
-                value={adminSearch}
-                onChange={e => setAdminSearch(e.target.value)}
-                placeholder="Search by name, barcode or keyword..."
-                style={{ width: "100%", border: "2px solid #e2e8f0", borderRadius: 10, padding: "9px 12px 9px 36px", fontSize: 13, fontFamily: "system-ui,sans-serif", color: "#1e293b", background: "#f8fafc", outline: "none", boxSizing: "border-box" as const }}
-              />
-              {adminSearch && (
-                <button onClick={() => setAdminSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", fontSize: 16, color: "#94a3b8", cursor: "pointer" }}>✕</button>
-              )}
+              <input value={adminSearch} onChange={e => setAdminSearch(e.target.value)} placeholder="Search by name, barcode or keyword..."
+                style={{ width: "100%", border: "2px solid #e2e8f0", borderRadius: 10, padding: "9px 12px 9px 36px", fontSize: 13, fontFamily: "system-ui,sans-serif", color: "#1e293b", background: "#f8fafc", outline: "none", boxSizing: "border-box" as const }} />
+              {adminSearch && <button onClick={() => setAdminSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", fontSize: 16, color: "#94a3b8", cursor: "pointer" }}>✕</button>}
             </div>
             {adminSearch && <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{filteredAdminProducts.length} result{filteredAdminProducts.length !== 1 ? "s" : ""} found</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -362,14 +320,12 @@ export default function AdminPage() {
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>{p.name}</div>
                     <div style={{ fontSize: 11, color: "#64748b" }}>{getCatStr(p.category)}</div>
                     <div style={{ fontSize: 11, marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{p.price}</span>
+                      <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{(p as any).price_text || p.price}</span>
                       <span style={{ color: "#94a3b8", textDecoration: "line-through" }}>₹{p.mrp}</span>
-                      {(p as any).website_price && <span style={{ fontWeight: 700, color: "#2563eb" }}>W:₹{(p as any).website_price}</span>}
+                      {(p as any).website_price && <span style={{ fontWeight: 700, color: "#2563eb" }}>Web:₹{(p as any).website_price}</span>}
                       {p.wholesale_price && <span style={{ fontWeight: 700, color: "#0ea5e9" }}>WS:₹{p.wholesale_price}</span>}
                       {p.purchase_price && <span style={{ fontWeight: 700, color: "#16a34a" }}>P:₹{p.purchase_price}</span>}
-                      {Array.isArray((p as any).vendors) && (p as any).vendors.length > 0 && (
-                        <span style={{ fontWeight: 600, color: "#8b5cf6" }}>🏪 {(p as any).vendors.length} vendor{(p as any).vendors.length > 1 ? "s" : ""}</span>
-                      )}
+                      {Array.isArray((p as any).vendors) && (p as any).vendors.length > 0 && <span style={{ fontWeight: 600, color: "#8b5cf6" }}>🏪 {(p as any).vendors.length}v</span>}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -426,13 +382,10 @@ export default function AdminPage() {
               <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>👥 Wholesale Staff</div>
               <button onClick={() => { setStaffForm(emptyStaffForm); setStaffEditId(null); setShowStaffForm(true); setStaffMsg({ text: "", type: "" }); }} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Add Staff</button>
             </div>
-
             {showStaffForm && (
               <div style={{ background: "#fff", borderRadius: 16, padding: 16, border: "2px solid #fca5a5", marginBottom: 16, boxShadow: "0 2px 12px rgba(220,38,38,0.1)" }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", marginBottom: 12 }}>{staffEditId ? "✏️ Edit Staff" : "➕ New Staff Account"}</div>
-                {staffMsg.text && (
-                  <div style={{ background: staffMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${staffMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: staffMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 10 }}>{staffMsg.text}</div>
-                )}
+                {staffMsg.text && <div style={{ background: staffMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${staffMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: staffMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 10 }}>{staffMsg.text}</div>}
                 <div style={{ marginBottom: 10 }}>
                   <label style={labelStyle}>Staff Name</label>
                   <input value={staffForm.name} onChange={e => setStaffForm({ ...staffForm, name: e.target.value })} placeholder="e.g. Surendhar" style={inputStyle} />
@@ -447,7 +400,6 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
-
             {activeStaff.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a", marginBottom: 8 }}>✅ ACTIVE ({activeStaff.length})</div>
@@ -457,8 +409,7 @@ export default function AdminPage() {
                       <div>
                         <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>👤 {s.name}</div>
                         <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
-                          Password:
-                          {showStaffPassword === s.id ? <span style={{ color: "#475569", fontWeight: 600 }}>{s.password}</span> : <span>••••••</span>}
+                          Password: {showStaffPassword === s.id ? <span style={{ color: "#475569", fontWeight: 600 }}>{s.password}</span> : <span>••••••</span>}
                           <button onClick={() => setShowStaffPassword(showStaffPassword === s.id ? null : s.id)} style={{ background: "none", border: "none", fontSize: 11, color: "#94a3b8", cursor: "pointer", padding: 0 }}>{showStaffPassword === s.id ? "hide" : "show"}</button>
                         </div>
                       </div>
@@ -469,18 +420,10 @@ export default function AdminPage() {
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span style={{ fontSize: 10, color: "#64748b" }}>Purchase Price</span>
-                          <button
-                            onClick={async () => {
-                              const newVal = !(s.show_purchase_price !== false);
-                              await supabase.from("staff_users").update({ show_purchase_price: newVal }).eq("id", s.id);
-                              fetchStaff();
-                            }}
-                            style={{
-                              background: s.show_purchase_price !== false ? "#16a34a" : "#94a3b8",
-                              border: "none", borderRadius: 20, padding: "3px 10px",
-                              color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer",
-                            }}
-                          >{s.show_purchase_price !== false ? "ON" : "OFF"}</button>
+                          <button onClick={async () => { const nv = !(s.show_purchase_price !== false); await supabase.from("staff_users").update({ show_purchase_price: nv }).eq("id", s.id); fetchStaff(); }}
+                            style={{ background: s.show_purchase_price !== false ? "#16a34a" : "#94a3b8", border: "none", borderRadius: 20, padding: "3px 10px", color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                            {s.show_purchase_price !== false ? "ON" : "OFF"}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -488,7 +431,6 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
-
             {revokedStaff.length > 0 && (
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>🚫 REVOKED ({revokedStaff.length})</div>
@@ -508,10 +450,7 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
-
-            {staffUsers.length === 0 && !showStaffForm && (
-              <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>No staff added yet.</div>
-            )}
+            {staffUsers.length === 0 && !showStaffForm && <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>No staff added yet.</div>}
           </div>
         )}
 
@@ -519,9 +458,7 @@ export default function AdminPage() {
         {tab === "addproduct" && (
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>{editId ? "✏️ Edit Product" : "➕ Add New Product"}</div>
-            {msg.text && (
-              <div style={{ background: msg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${msg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 600, color: msg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 14 }}>{msg.text}</div>
-            )}
+            {msg.text && <div style={{ background: msg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${msg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 600, color: msg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 14 }}>{msg.text}</div>}
             <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0" }}>
 
               {/* Name + Barcode */}
@@ -532,87 +469,80 @@ export default function AdminPage() {
                 </div>
                 <div>
                   <label style={labelStyle}>Barcodes (comma separated)</label>
-                  <input value={form.barcodes} onChange={e => setForm({ ...form, barcodes: e.target.value })} placeholder="123456, 789012, 345678" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Multiple barcodes OK — separate with comma</div>
+                  <input value={form.barcodes} onChange={e => setForm({ ...form, barcodes: e.target.value })} placeholder="123456, 789012" style={inputStyle} />
                 </div>
               </div>
 
-              {/* Prices */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={labelStyle}>In Store Price (₹) *</label>
-                  <input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} placeholder="85" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Shown to staff in wholesale app</div>
+              {/* ── PRICES — all support slash format ── */}
+              <div style={{ marginBottom: 14, background: "#fff8f8", borderRadius: 12, padding: 14, border: "1.5px solid #fecaca" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#dc2626", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  💰 Pricing — Use slash (/) for multiple variants e.g. 45/420
                 </div>
-                <div>
-                  <label style={labelStyle}>MRP (₹) *</label>
-                  <input type="number" value={form.mrp} onChange={e => setForm({ ...form, mrp: e.target.value })} placeholder="100" style={inputStyle} />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={labelStyle}>In Store Price (₹) *</label>
+                    <input type="text" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} placeholder="45 or 45/420" style={inputStyle} />
+                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 3 }}>Shown in wholesale app. Slash = variant prices</div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>MRP (₹) *</label>
+                    <input type="number" value={form.mrp} onChange={e => setForm({ ...form, mrp: e.target.value })} placeholder="100" style={inputStyle} />
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={labelStyle}>Website Price (₹)</label>
-                  <input type="number" value={form.website_price} onChange={e => setForm({ ...form, website_price: e.target.value })} placeholder="80" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#2563eb", marginTop: 3 }}>Shown to online customers</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Website Price (₹)</label>
+                    <input type="text" value={form.website_price} onChange={e => setForm({ ...form, website_price: e.target.value })} placeholder="48 or 48/450" style={inputStyle} />
+                    <div style={{ fontSize: 10, color: "#2563eb", marginTop: 3 }}>Shown on retail website. If blank → uses store price</div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Wholesale Price (₹)</label>
+                    <input type="text" value={form.wholesale_price} onChange={e => setForm({ ...form, wholesale_price: e.target.value })} placeholder="70 or 70/700" style={inputStyle} />
+                    <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 3 }}>Shown encoded in wholesale app</div>
+                  </div>
                 </div>
-                <div>
-                  <label style={labelStyle}>Wholesale Price (₹)</label>
-                  <input type="text" value={form.wholesale_price} onChange={e => setForm({ ...form, wholesale_price: e.target.value })} placeholder="70 or 70/700 for multiple" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 3 }}>Use slash: 220/2000 = Single/Bundle</div>
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={labelStyle}>Purchase Price (₹)</label>
-                  <input type="number" value={form.purchase_price} onChange={e => setForm({ ...form, purchase_price: e.target.value })} placeholder="60" style={inputStyle} />
-                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Staff-only (encoded)</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Purchase Price (₹)</label>
+                    <input type="number" value={form.purchase_price} onChange={e => setForm({ ...form, purchase_price: e.target.value })} placeholder="60" style={inputStyle} />
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Staff-only (encoded)</div>
+                  </div>
                 </div>
               </div>
 
               {/* Variants */}
               <div style={{ marginBottom: 14, background: "#f0f9ff", borderRadius: 12, padding: 14, border: "1.5px solid #bae6fd" }}>
-                <label style={{ ...labelStyle, color: "#0369a1", marginBottom: 6, display: "block" }}>📦 Price Variants (optional)</label>
-                <input value={form.variants} onChange={e => setForm({ ...form, variants: e.target.value })} placeholder="1 pc:5, 1 box:48, 1 dozen:55" style={{ ...inputStyle, background: "#fff" }} />
-                <div style={{ fontSize: 10, color: "#0369a1", marginTop: 4 }}>Format: label:price — e.g. "1 pc:5, 1 box:48"</div>
+                <label style={{ ...labelStyle, color: "#0369a1", marginBottom: 6, display: "block" }}>📦 Price Variants — manual labels (optional)</label>
+                <input value={form.variants} onChange={e => setForm({ ...form, variants: e.target.value })} placeholder="1 pc:45, 10 pcs:420" style={{ ...inputStyle, background: "#fff" }} />
+                <div style={{ fontSize: 10, color: "#0369a1", marginTop: 4 }}>
+                  Format: label:price — e.g. "1 pc:45, 10 pcs:420"<br />
+                  If blank, slash prices above are used automatically.
+                </div>
               </div>
 
               {/* Vendor Prices */}
               <div style={{ marginBottom: 14, background: "#f8f4ff", borderRadius: 12, padding: 14, border: "1.5px solid #e9d5ff" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                   <label style={{ ...labelStyle, color: "#7c3aed", marginBottom: 0 }}>🏪 Vendor Prices ({vendors.length}/5)</label>
-                  {vendors.length < 5 && (
-                    <button onClick={addVendor} style={{
-                      background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff",
-                      border: "none", borderRadius: 8, padding: "5px 12px",
-                      fontSize: 12, fontWeight: 700, cursor: "pointer",
-                    }}>+ Add Vendor</button>
-                  )}
+                  {vendors.length < 5 && <button onClick={addVendor} style={{ background: "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Add Vendor</button>}
                 </div>
-                {vendors.length === 0 && (
-                  <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", padding: "8px 0" }}>
-                    No vendors added. Click "+ Add Vendor" to add up to 5 vendor prices.
-                  </div>
-                )}
+                {vendors.length === 0 && <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", padding: "8px 0" }}>No vendors added yet.</div>}
                 {vendors.map((v, i) => (
                   <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-end" }}>
                     <div style={{ flex: 2 }}>
                       {i === 0 && <label style={{ ...labelStyle, fontSize: 10 }}>Vendor Name</label>}
-                      <input value={v.name} onChange={e => updateVendor(i, "name", e.target.value)} placeholder={`Vendor ${i + 1} name`} style={{ ...inputStyle, background: "#fff" }} />
+                      <input value={v.name} onChange={e => updateVendor(i, "name", e.target.value)} placeholder={`Vendor ${i + 1}`} style={{ ...inputStyle, background: "#fff" }} />
                     </div>
                     <div style={{ flex: 1 }}>
                       {i === 0 && <label style={{ ...labelStyle, fontSize: 10 }}>Price (₹)</label>}
                       <input type="number" value={v.price} onChange={e => updateVendor(i, "price", e.target.value)} placeholder="0" style={{ ...inputStyle, background: "#fff" }} />
                     </div>
-                    <button onClick={() => removeVendor(i)} style={{
-                      background: "#fff5f5", border: "1px solid #fca5a5",
-                      color: "#dc2626", borderRadius: 8, padding: "10px 10px",
-                      fontSize: 14, cursor: "pointer", flexShrink: 0,
-                    }}>✕</button>
+                    <button onClick={() => removeVendor(i)} style={{ background: "#fff5f5", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 8, padding: "10px", fontSize: 14, cursor: "pointer", flexShrink: 0 }}>✕</button>
                   </div>
                 ))}
               </div>
 
-              {/* Smart Category Dropdown */}
+              {/* Categories */}
               <div style={{ marginBottom: 14, position: "relative" }}>
                 <label style={labelStyle}>Categories * (select or create new)</label>
                 {selectedCategories.length > 0 && (
@@ -620,53 +550,30 @@ export default function AdminPage() {
                     {selectedCategories.map((cat, i) => (
                       <span key={i} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
                         {cat}
-                        <button onClick={() => setSelectedCategories(prev => prev.filter((_, idx) => idx !== i))}
-                          style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>✕</button>
+                        <button onClick={() => setSelectedCategories(prev => prev.filter((_, idx) => idx !== i))} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>✕</button>
                       </span>
                     ))}
                   </div>
                 )}
                 <div style={{ position: "relative" }}>
-                  <input
-                    value={categoryInput}
-                    onChange={e => { setCategoryInput(e.target.value); setShowCatDropdown(true); }}
-                    onFocus={() => setShowCatDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowCatDropdown(false), 200)}
-                    placeholder="Type to search or create category..."
-                    style={inputStyle}
-                  />
+                  <input value={categoryInput} onChange={e => { setCategoryInput(e.target.value); setShowCatDropdown(true); }} onFocus={() => setShowCatDropdown(true)} onBlur={() => setTimeout(() => setShowCatDropdown(false), 200)} placeholder="Type to search or create category..." style={inputStyle} />
                   {showCatDropdown && (
                     <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "2px solid #e2e8f0", borderRadius: 10, zIndex: 100, maxHeight: 200, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", marginTop: 2 }}>
-                      {products
-                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim()))
+                      {products.flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim()))
                         .filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx)
                         .filter(cat => !categoryInput || cat.toLowerCase().includes(categoryInput.toLowerCase()))
                         .filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase()))
-                        .sort()
-                        .map((cat, i) => (
-                          <div key={i}
-                            onMouseDown={() => { setSelectedCategories(prev => [...prev, cat]); setCategoryInput(""); setShowCatDropdown(false); }}
+                        .sort().map((cat, i) => (
+                          <div key={i} onMouseDown={() => { setSelectedCategories(prev => [...prev, cat]); setCategoryInput(""); setShowCatDropdown(false); }}
                             style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#1e293b", fontWeight: 500, borderBottom: "1px solid #f1f5f9" }}
                             onMouseEnter={e => (e.currentTarget.style.background = "#fff5f5")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "#fff")}
-                          >{cat}</div>
-                        ))
-                      }
-                      {categoryInput.trim() && !products
-                        .flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim()))
-                        .some(c => c.toLowerCase() === categoryInput.trim().toLowerCase()) &&
-                        !selectedCategories.some(s => s.toLowerCase() === categoryInput.trim().toLowerCase()) && (
-                        <div
-                          onMouseDown={() => {
-                            const newCat = categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase();
-                            setSelectedCategories(prev => [...prev, newCat]);
-                            setCategoryInput(""); setShowCatDropdown(false);
-                          }}
-                          style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#16a34a", fontWeight: 600, background: "#f0fdf4", borderTop: "1px solid #e2e8f0" }}
-                        >＋ Create "{categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase()}"</div>
-                      )}
-                      {categoryInput.trim() === "" && products.flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim())).filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx).filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase())).length === 0 && (
-                        <div style={{ padding: "10px 14px", fontSize: 12, color: "#94a3b8" }}>Type to create a new category</div>
+                            onMouseLeave={e => (e.currentTarget.style.background = "#fff")}>{cat}</div>
+                        ))}
+                      {categoryInput.trim() && !products.flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim())).some(c => c.toLowerCase() === categoryInput.trim().toLowerCase()) && !selectedCategories.some(s => s.toLowerCase() === categoryInput.trim().toLowerCase()) && (
+                        <div onMouseDown={() => { const nc = categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase(); setSelectedCategories(prev => [...prev, nc]); setCategoryInput(""); setShowCatDropdown(false); }}
+                          style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#16a34a", fontWeight: 600, background: "#f0fdf4", borderTop: "1px solid #e2e8f0" }}>
+                          ＋ Create "{categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase()}"
+                        </div>
                       )}
                     </div>
                   )}
@@ -674,18 +581,11 @@ export default function AdminPage() {
                 <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Select multiple. New categories auto-capitalize.</div>
               </div>
 
-              {/* ── IMAGES with Postimg upload ── */}
+              {/* ── IMAGES — Cloudinary ── */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Images</label>
-                <label style={{
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  background: uploadingImages ? "#dbeafe" : "#eff6ff",
-                  border: "2px dashed #93c5fd", borderRadius: 10,
-                  padding: "12px", textAlign: "center", cursor: uploadingImages ? "wait" : "pointer",
-                  fontSize: 12, color: "#2563eb", fontWeight: 600, marginBottom: 8,
-                }}>
-                  <input type="file" accept="image/*" multiple style={{ display: "none" }}
-                    disabled={uploadingImages}
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: uploadingImages ? "#dbeafe" : "#eff6ff", border: "2px dashed #93c5fd", borderRadius: 10, padding: "12px", cursor: uploadingImages ? "wait" : "pointer", fontSize: 12, color: "#2563eb", fontWeight: 600, marginBottom: 8 }}>
+                  <input type="file" accept="image/*" multiple style={{ display: "none" }} disabled={uploadingImages}
                     onChange={async (e) => {
                       const files = Array.from(e.target.files || []);
                       if (!files.length) return;
@@ -693,16 +593,13 @@ export default function AdminPage() {
                       const urls: string[] = [];
                       for (const file of files) {
                         try {
-                          // ── POSTIMG upload (replaces imgbb) ──
                           const fd = new FormData();
                           fd.append("file", file);
-                          const res = await fetch("https://api.postimg.cc/image/upload", {
-                            method: "POST",
-                            headers: { "Accept": "application/json" },
-                            body: fd,
-                          });
+                          fd.append("upload_preset", "jg-wholesale");
+                          fd.append("cloud_name", "dklbnna8p");
+                          const res = await fetch("https://api.cloudinary.com/v1_1/dklbnna8p/image/upload", { method: "POST", body: fd });
                           const data = await res.json();
-                          if (data.direct_link) urls.push(data.direct_link);
+                          if (data.secure_url) urls.push(data.secure_url);
                         } catch {}
                       }
                       const existing = form.image_url.trim();
@@ -712,12 +609,9 @@ export default function AdminPage() {
                       e.target.value = "";
                     }}
                   />
-                  {uploadingImages ? "⏳ Uploading..." : "📷 Upload Images (select multiple)"}
+                  {uploadingImages ? "⏳ Uploading to Cloudinary..." : "📷 Upload Images (select multiple)"}
                 </label>
-                <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })}
-                  placeholder={"https://i.postimg.cc/xxx/img.jpg\n(paste URLs or upload above)"}
-                  rows={2} style={{ ...inputStyle, resize: "vertical" as const }} />
-                {/* Image previews with delete */}
+                <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} placeholder={"https://res.cloudinary.com/dklbnna8p/...\n(paste URLs or upload above)"} rows={2} style={{ ...inputStyle, resize: "vertical" as const }} />
                 {form.image_url && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
                     {form.image_url.split("\n").map((url, i) => {
@@ -725,23 +619,10 @@ export default function AdminPage() {
                       if (!trimmed) return null;
                       return (
                         <div key={i} style={{ position: "relative", width: 64, height: 64 }}>
-                          <img src={trimmed}
-                            style={{ width: 64, height: 64, objectFit: "contain", border: "1.5px solid #e2e8f0", borderRadius: 8, background: "#f8fafc" }}
-                            onError={e => { (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%23fee2e2'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23dc2626' font-size='24'%3E❌%3C/text%3E%3C/svg%3E"; }}
-                          />
-                          <button
-                            onClick={() => {
-                              const lines = form.image_url.split("\n").filter((_, idx) => idx !== i);
-                              setForm(f => ({ ...f, image_url: lines.join("\n") }));
-                            }}
-                            style={{
-                              position: "absolute", top: -6, right: -6,
-                              background: "#dc2626", border: "none", color: "#fff",
-                              borderRadius: "50%", width: 18, height: 18, fontSize: 10,
-                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                              fontWeight: 800, lineHeight: 1,
-                            }}
-                          >✕</button>
+                          <img src={trimmed} style={{ width: 64, height: 64, objectFit: "contain", border: "1.5px solid #e2e8f0", borderRadius: 8, background: "#f8fafc" }}
+                            onError={e => { (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%23fee2e2'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23dc2626' font-size='24'%3E❌%3C/text%3E%3C/svg%3E"; }} />
+                          <button onClick={() => { const lines = form.image_url.split("\n").filter((_, idx) => idx !== i); setForm(f => ({ ...f, image_url: lines.join("\n") })); }}
+                            style={{ position: "absolute", top: -6, right: -6, background: "#dc2626", border: "none", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>✕</button>
                         </div>
                       );
                     })}
@@ -749,93 +630,47 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* ── VIDEO with preview and remove ── */}
+              {/* ── VIDEO — Cloudinary ── */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Video</label>
-                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                  <label style={{
-                    flex: 1, background: uploadingVideo ? "#f3e8ff" : "#fdf4ff",
-                    border: "2px dashed #d8b4fe", borderRadius: 10,
-                    padding: "10px", textAlign: "center",
-                    cursor: uploadingVideo ? "wait" : "pointer", fontSize: 12,
-                    color: "#7c3aed", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                  }}>
-                    <input type="file" accept="video/*" style={{ display: "none" }}
-                      disabled={uploadingVideo}
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setUploadingVideo(true);
-                        try {
-                          const fd = new FormData();
-                          fd.append("file", file);
-                          fd.append("upload_preset", "jg-wholesale");
-                          fd.append("cloud_name", "dklbnna8p");
-                          const res = await fetch("https://api.cloudinary.com/v1_1/dklbnna8p/video/upload", { method: "POST", body: fd });
-                          const data = await res.json();
-                          if (data.secure_url) setForm(f => ({ ...f, video_url: data.secure_url }));
-                        } catch {}
-                        setUploadingVideo(false);
-                        e.target.value = "";
-                      }}
-                    />
-                    {uploadingVideo ? "⏳ Uploading video..." : "🎥 Upload Video"}
-                  </label>
-                </div>
-                <input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })}
-                  placeholder="https://example.com/video.mp4 (or upload above)" style={inputStyle} />
-
-                {/* ── VIDEO PREVIEW WITH REMOVE ── */}
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: uploadingVideo ? "#f3e8ff" : "#fdf4ff", border: "2px dashed #d8b4fe", borderRadius: 10, padding: "10px", cursor: uploadingVideo ? "wait" : "pointer", fontSize: 12, color: "#7c3aed", fontWeight: 600, marginBottom: 8 }}>
+                  <input type="file" accept="video/*" style={{ display: "none" }} disabled={uploadingVideo}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setUploadingVideo(true);
+                      try {
+                        const fd = new FormData();
+                        fd.append("file", file);
+                        fd.append("upload_preset", "jg-wholesale");
+                        fd.append("cloud_name", "dklbnna8p");
+                        const res = await fetch("https://api.cloudinary.com/v1_1/dklbnna8p/video/upload", { method: "POST", body: fd });
+                        const data = await res.json();
+                        if (data.secure_url) setForm(f => ({ ...f, video_url: data.secure_url }));
+                      } catch {}
+                      setUploadingVideo(false);
+                      e.target.value = "";
+                    }}
+                  />
+                  {uploadingVideo ? "⏳ Uploading video..." : "🎥 Upload Video"}
+                </label>
+                <input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })} placeholder="https://res.cloudinary.com/... (or upload above)" style={inputStyle} />
                 {form.video_url.trim() && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                     <div style={{ position: "relative", width: 96, height: 64 }}>
-                      <div style={{
-                        width: 96, height: 64, borderRadius: 8, overflow: "hidden",
-                        border: "1.5px solid #e2e8f0", background: "#1a1a2e",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        position: "relative",
-                      }}>
-                        {/* Cloudinary thumbnail */}
+                      <div style={{ width: 96, height: 64, borderRadius: 8, overflow: "hidden", border: "1.5px solid #e2e8f0", background: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
                         {form.video_url.includes("cloudinary.com") && (
-                          <img
-                            src={form.video_url
-                              .replace("/video/upload/", "/video/upload/w_96,h_64,c_fill,so_0/")
-                              .replace(/\.(mp4|webm|mov|ogg)$/i, ".jpg")}
+                          <img src={form.video_url.replace("/video/upload/", "/video/upload/w_96,h_64,c_fill,so_0/").replace(/\.(mp4|webm|mov|ogg)$/i, ".jpg")}
                             style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
-                            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                          />
+                            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                         )}
-                        {/* Play icon overlay */}
-                        <div style={{
-                          position: "absolute", inset: 0,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          background: "rgba(0,0,0,0.25)",
-                        }}>
-                          <div style={{
-                            width: 0, height: 0,
-                            borderTop: "8px solid transparent",
-                            borderBottom: "8px solid transparent",
-                            borderLeft: "14px solid rgba(255,255,255,0.9)",
-                            marginLeft: 3,
-                          }} />
+                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.25)" }}>
+                          <div style={{ width: 0, height: 0, borderTop: "8px solid transparent", borderBottom: "8px solid transparent", borderLeft: "14px solid rgba(255,255,255,0.9)", marginLeft: 3 }} />
                         </div>
-                        <div style={{
-                          position: "absolute", bottom: 3, left: 4,
-                          background: "rgba(124,58,237,0.9)", color: "#fff",
-                          fontSize: 8, fontWeight: 700, borderRadius: 6, padding: "1px 5px",
-                        }}>VIDEO</div>
+                        <div style={{ position: "absolute", bottom: 3, left: 4, background: "rgba(124,58,237,0.9)", color: "#fff", fontSize: 8, fontWeight: 700, borderRadius: 6, padding: "1px 5px" }}>VIDEO</div>
                       </div>
-                      {/* Remove button */}
-                      <button
-                        onClick={() => setForm(f => ({ ...f, video_url: "" }))}
-                        style={{
-                          position: "absolute", top: -6, right: -6,
-                          background: "#dc2626", border: "none", color: "#fff",
-                          borderRadius: "50%", width: 18, height: 18, fontSize: 10,
-                          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                          fontWeight: 800, lineHeight: 1,
-                        }}
-                      >✕</button>
+                      <button onClick={() => setForm(f => ({ ...f, video_url: "" }))}
+                        style={{ position: "absolute", top: -6, right: -6, background: "#dc2626", border: "none", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>✕</button>
                     </div>
                   </div>
                 )}
@@ -851,27 +686,16 @@ export default function AdminPage() {
               <div style={{ marginBottom: 14, background: "#f0fdf4", borderRadius: 12, padding: 14, border: "1.5px solid #86efac" }}>
                 <label style={{ ...labelStyle, color: "#16a34a", marginBottom: 10, display: "block" }}>📋 Product Description</label>
                 <div style={{ marginBottom: 10 }}>
-                  <label style={{ ...labelStyle, fontSize: 10 }}>Short Description (1-2 lines)</label>
-                  <input
-                    value={form.short_description}
-                    onChange={e => setForm({ ...form, short_description: e.target.value })}
-                    placeholder="e.g. Premium quality pencil, HB grade, smooth writing"
-                    style={{ ...inputStyle, background: "#fff" }}
-                  />
+                  <label style={{ ...labelStyle, fontSize: 10 }}>Short Description</label>
+                  <input value={form.short_description} onChange={e => setForm({ ...form, short_description: e.target.value })} placeholder="e.g. Premium quality, HB grade" style={{ ...inputStyle, background: "#fff" }} />
                 </div>
                 <div>
-                  <label style={{ ...labelStyle, fontSize: 10 }}>Long Description (full details)</label>
-                  <textarea
-                    value={form.long_description}
-                    onChange={e => setForm({ ...form, long_description: e.target.value })}
-                    placeholder="Enter full product details, specifications, usage, etc."
-                    rows={5}
-                    style={{ ...inputStyle, resize: "vertical" as const, background: "#fff" }}
-                  />
+                  <label style={{ ...labelStyle, fontSize: 10 }}>Long Description</label>
+                  <textarea value={form.long_description} onChange={e => setForm({ ...form, long_description: e.target.value })} placeholder="Full product details..." rows={5} style={{ ...inputStyle, resize: "vertical" as const, background: "#fff" }} />
                 </div>
               </div>
 
-              {/* Save buttons */}
+              {/* Save */}
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={handleSave} disabled={saving} style={{ flex: 1, background: saving ? "#f87171" : "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 12, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
                   {saving ? "Saving..." : editId ? "💾 Update" : "✅ Add Product"}
@@ -887,12 +711,9 @@ export default function AdminPage() {
       {tab === "settings" && (
         <div style={{ padding: "16px 14px 80px" }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>⚙️ Settings</div>
-          <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", marginBottom: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>🔐 ROYALTIMES Cipher Key</div>
-            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
-              This 10-character key encodes W/S and Purchase prices in the app. Each character represents a digit (0-9). Default: <strong>ROYALTIMES</strong>
-              <br />1=R, 2=O, 3=Y, 4=A, 5=L, 6=T, 7=I, 8=M, 9=E, 0=S
-            </div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>10-char key encoding W/S and Purchase prices. Default: <strong>ROYALTIMES</strong></div>
             <div style={{ background: "#f8f4ff", borderRadius: 10, padding: 12, marginBottom: 14, border: "1px solid #e9d5ff" }}>
               <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 700, marginBottom: 6 }}>CURRENT KEY</div>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -904,30 +725,20 @@ export default function AdminPage() {
                 ))}
               </div>
             </div>
-            {cipherMsg.text && (
-              <div style={{ background: cipherMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${cipherMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: cipherMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 12 }}>{cipherMsg.text}</div>
-            )}
+            {cipherMsg.text && <div style={{ background: cipherMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${cipherMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: cipherMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 12 }}>{cipherMsg.text}</div>}
             <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>New Cipher Key (exactly 10 unique characters)</label>
-              <input
-                value={cipherInput}
-                onChange={e => { setCipherInput(e.target.value.toUpperCase()); setCipherMsg({ text: "", type: "" }); }}
-                placeholder="ROYALTIMES"
-                maxLength={10}
-                style={{ ...inputStyle, fontFamily: "monospace", fontSize: 18, letterSpacing: 4, textTransform: "uppercase" }}
-              />
+              <label style={labelStyle}>New Cipher Key (10 unique characters)</label>
+              <input value={cipherInput} onChange={e => { setCipherInput(e.target.value.toUpperCase()); setCipherMsg({ text: "", type: "" }); }} placeholder="ROYALTIMES" maxLength={10}
+                style={{ ...inputStyle, fontFamily: "monospace", fontSize: 18, letterSpacing: 4, textTransform: "uppercase" }} />
               <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
-                {cipherInput.length}/10 characters
-                {cipherInput.length === 10 && new Set(cipherInput).size === 10 && <span style={{ color: "#16a34a", marginLeft: 8 }}>✅ Valid key</span>}
-                {cipherInput.length === 10 && new Set(cipherInput).size !== 10 && <span style={{ color: "#dc2626", marginLeft: 8 }}>❌ Duplicate characters</span>}
+                {cipherInput.length}/10
+                {cipherInput.length === 10 && new Set(cipherInput).size === 10 && <span style={{ color: "#16a34a", marginLeft: 8 }}>✅ Valid</span>}
+                {cipherInput.length === 10 && new Set(cipherInput).size !== 10 && <span style={{ color: "#dc2626", marginLeft: 8 }}>❌ Duplicates</span>}
               </div>
             </div>
             <button onClick={saveCipherKey} disabled={cipherLoading} style={{ width: "100%", background: cipherLoading ? "#a78bfa" : "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff", border: "none", borderRadius: 12, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
               {cipherLoading ? "Saving..." : "🔐 Update Cipher Key"}
             </button>
-            <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
-              ⚠️ After changing, staff will see new codes when they reopen the app
-            </div>
           </div>
         </div>
       )}
