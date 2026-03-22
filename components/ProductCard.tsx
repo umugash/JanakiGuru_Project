@@ -119,8 +119,7 @@ export default function ProductCard({ product, onAddToCart, cartQuantity, onIncr
   // What to show on the card before variant is selected
   const cardDisplayPrice = (() => {
     if (variants.length === 0) return String(product.price);
-    if (variants.length === 1) return `₹${variants[0].price}`;
-    return variants.map(v => v.price).join("/");
+    return `${variants[0].price}`;
   })();
 
   const activePrice = selectedVariant ? selectedVariant.price : (variants[0]?.price || product.price);
