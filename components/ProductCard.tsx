@@ -20,7 +20,6 @@ interface ProductCardProps {
   cartQuantity: number;
   onIncrement: (product: Product) => void;
   onDecrement: (product: Product) => void;
-  // New: per-variant cart quantities so card knows what's in cart per variant
   variantCartQuantities?: { [variantLabel: string]: number };
   onVariantIncrement?: (product: Product, variantLabel: string, price: number) => void;
   onVariantDecrement?: (product: Product, variantLabel: string, price: number) => void;
@@ -61,7 +60,7 @@ function getVariants(product: any): { label: string; price: number }[] {
 
   if (variantLabels.length > 0) return variantLabels;
 
-  const pricePrices = parseSlashPrices(product.price_text || product.price);
+  const pricePrices = parseSlashPrices((product as any).price_text || product.price);
   if (pricePrices.length > 1) return pricePrices.map((p, i) => ({ label: `Option ${i + 1}`, price: p }));
 
   const single = Number(product.price);
@@ -96,12 +95,11 @@ export default function ProductCard({
   const variants = getVariants(product);
   const hasVariants = variants.length > 1;
 
-  // Total items in cart across all variants (or just cartQuantity for single)
+  // Total qty across all variants
   const totalInCart = hasVariants
     ? Object.values(variantCartQuantities).reduce((a, b) => a + b, 0)
     : cartQuantity;
 
-  // Card display price — first variant price only
   const cardDisplayPrice = variants.length > 0 ? variants[0].price : product.price;
   const displayPriceNumeric = cardDisplayPrice;
   const discount = !hasVariants && product.mrp > displayPriceNumeric
@@ -199,7 +197,7 @@ export default function ProductCard({
         @media(max-width:640px){.desktop-arrow{display:none!important}}
       `}</style>
 
-      {/* FULLSCREEN MODAL */}
+      {/* FULLSCREEN */}
       {fullscreen && (
         <div className={fsClosing ? "fs-bg-out" : "fs-bg"} onClick={closeFullscreen} onTouchStart={handleFsTouchStart} onTouchEnd={handleFsTouchEnd}
           style={{ position: "fixed", inset: 0, background: "linear-gradient(160deg,#1a0000,#2d0000,#1a0000)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
@@ -213,8 +211,7 @@ export default function ProductCard({
           </div>
           <div className={fsClosing ? "fs-content-out" : "fs-content"} onClick={e => e.stopPropagation()}
             style={{ width: "90vw", maxWidth: 480, background: "#fff", borderRadius: 20, overflow: "hidden", boxShadow: "0 20px 60px rgba(239,68,68,0.3)", border: "2px solid rgba(239,68,68,0.4)", marginTop: 56, marginBottom: 60 }}>
-            {isVideo(fsSrc)
-              ? <video src={fsSrc} controls autoPlay style={{ width: "100%", display: "block", maxHeight: "65vh", objectFit: "contain", background: "#000" }} />
+            {isVideo(fsSrc) ? <video src={fsSrc} controls autoPlay style={{ width: "100%", display: "block", maxHeight: "65vh", objectFit: "contain", background: "#000" }} />
               : <img src={fsSrc} alt={product.name} style={{ width: "100%", display: "block", maxHeight: "65vh", objectFit: "contain", padding: 12 }} />}
           </div>
           {media.length > 1 && (
@@ -274,9 +271,9 @@ export default function ProductCard({
             {hasVariants && <span style={{ fontSize: 9, color: "#6b7280" }}>onwards</span>}
           </div>
 
-          {/* ADD BUTTON or QUANTITY or VARIANT SUMMARY */}
+          {/* BUTTON AREA */}
           {!hasVariants ? (
-            // Single price product
+            // Single price — simple +/−
             cartQuantity === 0 ? (
               <button onClick={() => onAddToCart(product)} style={{ width: "100%", background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 0", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>ADD +</button>
             ) : (
@@ -287,20 +284,29 @@ export default function ProductCard({
               </div>
             )
           ) : (
-            // Multi-variant product
+            // Multi-variant
             totalInCart === 0 ? (
-              <button onClick={() => setShowVariants(true)} style={{ width: "100%", background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 0", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>ADD +</button>
+              // ── Nothing in cart: show ADD + and options link ──
+              <div>
+                <button onClick={() => setShowVariants(true)}
+                  style={{ width: "100%", background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 0", fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: 3 }}>
+                  ADD +
+                </button>
+                <button onClick={() => setShowVariants(true)} style={{ width: "100%", background: "none", border: "none", color: "#6b7280", fontSize: 10, fontWeight: 600, cursor: "pointer", padding: "2px 0" }}>
+                  {variants.length} options ▼
+                </button>
+              </div>
             ) : (
-              // Show summary of what's in cart + edit button
+              // ── Items in cart: show per-variant qty rows + add more ──
               <div>
                 <div style={{ background: "#fff1f1", borderRadius: 8, border: "1.5px solid #fca5a5", padding: "5px 8px", marginBottom: 4 }}>
                   {variants.map(v => {
                     const qty = variantCartQuantities[v.label] || 0;
                     if (qty === 0) return null;
                     return (
-                      <div key={v.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11 }}>
-                        <span style={{ color: "#475569", fontWeight: 600 }}>{v.label || "Item"}</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <div key={v.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, marginBottom: 2 }}>
+                        <span style={{ color: "#475569", fontWeight: 600, flex: 1 }}>{v.label || "Item"}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
                           <button onClick={() => onVariantDecrement?.(product, v.label, v.price)} style={{ background: "none", border: "none", color: "#dc2626", fontSize: 16, fontWeight: 800, width: 24, height: 22, cursor: "pointer", padding: 0 }}>−</button>
                           <span style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", minWidth: 16, textAlign: "center" }}>{qty}</span>
                           <button onClick={() => onVariantIncrement?.(product, v.label, v.price)} style={{ background: "none", border: "none", color: "#dc2626", fontSize: 16, fontWeight: 800, width: 24, height: 22, cursor: "pointer", padding: 0 }}>+</button>
@@ -315,14 +321,10 @@ export default function ProductCard({
               </div>
             )
           )}
-
-          {hasVariants && totalInCart === 0 && (
-            <button onClick={() => setShowVariants(true)} style={{ width: "100%", background: "none", border: "none", color: "#6b7280", fontSize: 10, fontWeight: 600, cursor: "pointer", padding: "2px 0" }}>{variants.length} options ▼</button>
-          )}
         </div>
       </div>
 
-      {/* ── VARIANT BOTTOM SHEET — stays open, add multiple ── */}
+      {/* ── VARIANT BOTTOM SHEET ── */}
       {showVariants && hasVariants && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
           onClick={() => setShowVariants(false)}>
@@ -330,27 +332,28 @@ export default function ProductCard({
             onClick={e => e.stopPropagation()}>
             <div style={{ width: 40, height: 4, background: "#e2e8f0", borderRadius: 2, margin: "0 auto 16px" }} />
             <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>{product.name}</div>
-            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 16 }}>Select variants — add as many as you want</div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 16 }}>Add as many variants as you want</div>
 
             {variants.map((v, i) => {
               const qty = variantCartQuantities[v.label] || 0;
               const varImg = (product.image_url || [])[i] || (product.image_url || [])[0];
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i < variants.length - 1 ? "1px solid #f1f5f9" : "none" }}>
-                  {varImg && <img src={varImg} style={{ width: 52, height: 52, objectFit: "contain", border: "1px solid #fee2e2", borderRadius: 8, flexShrink: 0 }} />}
+                  {varImg && <img src={varImg} alt={v.label} style={{ width: 52, height: 52, objectFit: "contain", border: "1px solid #fee2e2", borderRadius: 8, flexShrink: 0 }} />}
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{v.label || `Option ${i + 1}`}</div>
                     <div style={{ fontSize: 14, fontWeight: 800, color: "#dc2626" }}>₹{v.price}</div>
                   </div>
-                  {/* Inline qty control — stays in sheet */}
+
+                  {/* ── FIX: only call onVariantIncrement, NOT onAddToCart ── */}
                   {qty === 0 ? (
-                    <button onClick={() => {
-                      onVariantIncrement?.(product, v.label, v.price);
-                      // Also call onAddToCart for first-time adding this variant
-                      onAddToCart({ ...product, price: v.price, website_price: v.price } as any);
-                    }} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>ADD</button>
+                    <button
+                      onClick={() => onVariantIncrement?.(product, v.label, v.price)}
+                      style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+                      ADD
+                    </button>
                   ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 0, background: "#fff1f1", borderRadius: 8, border: "1.5px solid #fca5a5", flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", background: "#fff1f1", borderRadius: 8, border: "1.5px solid #fca5a5", flexShrink: 0 }}>
                       <button onClick={() => onVariantDecrement?.(product, v.label, v.price)} style={{ background: "none", border: "none", color: "#dc2626", fontSize: 20, fontWeight: 800, width: 36, height: 36, cursor: "pointer" }}>−</button>
                       <span style={{ fontSize: 14, fontWeight: 700, color: "#dc2626", minWidth: 20, textAlign: "center" }}>{qty}</span>
                       <button onClick={() => onVariantIncrement?.(product, v.label, v.price)} style={{ background: "none", border: "none", color: "#dc2626", fontSize: 20, fontWeight: 800, width: 36, height: 36, cursor: "pointer" }}>+</button>
@@ -360,9 +363,8 @@ export default function ProductCard({
               );
             })}
 
-            {/* Done button */}
             <button onClick={() => setShowVariants(false)} style={{ width: "100%", marginTop: 16, background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 12, padding: "13px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-              ✓ Done {totalInCart > 0 ? `(${totalInCart} item${totalInCart > 1 ? "s" : ""} added)` : ""}
+              ✓ Done {totalInCart > 0 ? `(${totalInCart} item${totalInCart > 1 ? "s" : ""})` : ""}
             </button>
           </div>
         </div>

@@ -79,14 +79,16 @@ export default function Home() {
     return `${productId}|${variantLabel}`;
   }
 
-  // Add or increment a specific variant line
+  // Add or increment a specific variant line — ONE call = ONE item added
   function addVariantToCart(product: any, variantLabel: string, variantPrice: number) {
     setCart(prev => {
       const key = cartKey(product.id, variantLabel);
       const existing = prev.find(p => cartKey(p.id, p.variantLabel) === key);
       if (existing) {
+        // Already in cart — just increment
         return prev.map(p => cartKey(p.id, p.variantLabel) === key ? { ...p, quantity: p.quantity + 1 } : p);
       }
+      // Not in cart yet — add new line with qty 1
       return [...prev, {
         ...product,
         variantLabel,
