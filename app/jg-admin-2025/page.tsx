@@ -25,7 +25,7 @@ interface StaffUser {
 }
 
 const emptyForm = {
-  name: "", price: "", mrp: "", wholesale_price: "", purchase_price: "",
+  name: "", price: "", mrp: "", wholesale_price: "", wholesale_labels: "", purchase_price: "",
   website_price: "", barcodes: "", variants: "",
   category: "", image_url: "", video_url: "", keywords: "",
   short_description: "", long_description: "",
@@ -146,12 +146,32 @@ export default function AdminPage() {
     setVendors(v => v.map((vendor, i) => i === index ? { ...vendor, [field]: value } : vendor));
   }
 
+  // Parse wholesale price slash values to determine how many label fields to show
+  function getWsPriceCount(): number {
+    const prices = form.wholesale_price.split("/").map(s => s.trim()).filter(s => s && !isNaN(Number(s)));
+    return prices.length;
+  }
+
+  // Get current wholesale labels as array
+  function getWsLabels(): string[] {
+    return form.wholesale_labels.split(",").map(s => s.trim());
+  }
+
+  // Update a specific label by index
+  function updateWsLabel(index: number, value: string) {
+    const labels = getWsLabels();
+    while (labels.length <= index) labels.push("");
+    labels[index] = value;
+    setForm(f => ({ ...f, wholesale_labels: labels.join(", ") }));
+  }
+
   function startEdit(p: Product) {
     setForm({
       name: p.name,
       price: (p as any).price_text || String(p.price),
       mrp: String(p.mrp),
       wholesale_price: p.wholesale_price ? String(p.wholesale_price) : "",
+      wholesale_labels: (p as any).wholesale_labels || "",
       purchase_price: p.purchase_price ? String(p.purchase_price) : "",
       category: getCatStr(p.category),
       image_url: Array.isArray(p.image_url) ? p.image_url.join("\n") : "",
@@ -188,13 +208,8 @@ export default function AdminPage() {
     setSaving(true); setMsg({ text: "", type: "" });
 
     const vendorArr = vendors.filter(v => v.name.trim() && v.price).map(v => ({ name: v.name.trim(), price: Number(v.price) }));
-
-    // Store price_text as full string (e.g. "45/420"), price as first numeric value for compat
     const priceText = form.price.trim();
     const priceNumeric = Number(priceText.split("/")[0]) || 0;
-
-    // website_price stored as string to support "48/450"
-    const websitePriceText = form.website_price.trim() || null;
 
     const payload: any = {
       name: form.name.trim(),
@@ -202,8 +217,9 @@ export default function AdminPage() {
       price_text: priceText,
       mrp: Number(form.mrp),
       wholesale_price: form.wholesale_price ? form.wholesale_price.trim() : null,
+      wholesale_labels: form.wholesale_labels ? form.wholesale_labels.trim() : null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
-      website_price: websitePriceText,
+      website_price: form.website_price ? form.website_price.trim() : null,
       barcodes: form.barcodes ? form.barcodes.split(",").map((s) => s.trim()).filter(Boolean) : [],
       barcode: form.barcodes ? form.barcodes.split(",").map((s) => s.trim()).filter(Boolean)[0] || null : null,
       variants_text: form.variants.trim() || null,
@@ -267,7 +283,6 @@ export default function AdminPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "system-ui,sans-serif" }}>
-      {/* Top bar */}
       <div style={{ background: "linear-gradient(135deg,#1a1a2e,#0f3460)", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.3)" }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>⚙ Admin Panel</div>
@@ -276,7 +291,6 @@ export default function AdminPage() {
         <button onClick={() => { sessionStorage.removeItem("jg_admin"); setAuthed(false); }} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", borderRadius: 10, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Logout</button>
       </div>
 
-      {/* Tabs */}
       <div style={{ background: "#fff", borderBottom: "2px solid #e2e8f0", display: "flex", position: "sticky", top: 52, zIndex: 99 }}>
         {([
           { key: "products", label: `📦 Products (${products.length})` },
@@ -285,12 +299,7 @@ export default function AdminPage() {
           { key: "addproduct", label: editId ? "✏️ Edit" : "➕ Add" },
           { key: "settings", label: "⚙️ Settings" },
         ] as { key: Tab; label: string }[]).map(t => (
-          <button key={t.key} onClick={() => { setTab(t.key); if (t.key !== "addproduct") resetForm(); }} style={{
-            flex: 1, padding: "11px 4px", border: "none", background: "none",
-            fontSize: 11, fontWeight: 700, cursor: "pointer",
-            color: tab === t.key ? "#dc2626" : "#64748b",
-            borderBottom: tab === t.key ? "3px solid #dc2626" : "3px solid transparent",
-          }}>{t.label}</button>
+          <button key={t.key} onClick={() => { setTab(t.key); if (t.key !== "addproduct") resetForm(); }} style={{ flex: 1, padding: "11px 4px", border: "none", background: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", color: tab === t.key ? "#dc2626" : "#64748b", borderBottom: tab === t.key ? "3px solid #dc2626" : "3px solid transparent" }}>{t.label}</button>
         ))}
       </div>
 
@@ -392,7 +401,7 @@ export default function AdminPage() {
                 </div>
                 <div style={{ marginBottom: 14 }}>
                   <label style={labelStyle}>Password</label>
-                  <input value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} placeholder="Set a password for this staff" style={inputStyle} />
+                  <input value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} placeholder="Set a password" style={inputStyle} />
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={handleSaveStaff} disabled={saving} style={{ flex: 1, background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 12, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{saving ? "Saving..." : staffEditId ? "Update" : "Add Staff"}</button>
@@ -473,16 +482,16 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* ── PRICES — all support slash format ── */}
+              {/* Prices */}
               <div style={{ marginBottom: 14, background: "#fff8f8", borderRadius: 12, padding: 14, border: "1.5px solid #fecaca" }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "#dc2626", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                  💰 Pricing — Use slash (/) for multiple variants e.g. 45/420
+                  💰 Pricing — Use slash (/) for multiple e.g. 45/420
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                   <div>
                     <label style={labelStyle}>In Store Price (₹) *</label>
                     <input type="text" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} placeholder="45 or 45/420" style={inputStyle} />
-                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 3 }}>Shown in wholesale app. Slash = variant prices</div>
+                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 3 }}>Slash = variant prices</div>
                   </div>
                   <div>
                     <label style={labelStyle}>MRP (₹) *</label>
@@ -493,15 +502,8 @@ export default function AdminPage() {
                   <div>
                     <label style={labelStyle}>Website Price (₹)</label>
                     <input type="text" value={form.website_price} onChange={e => setForm({ ...form, website_price: e.target.value })} placeholder="48 or 48/450" style={inputStyle} />
-                    <div style={{ fontSize: 10, color: "#2563eb", marginTop: 3 }}>Shown on retail website. If blank → uses store price</div>
+                    <div style={{ fontSize: 10, color: "#2563eb", marginTop: 3 }}>If blank → uses store price</div>
                   </div>
-                  <div>
-                    <label style={labelStyle}>Wholesale Price (₹)</label>
-                    <input type="text" value={form.wholesale_price} onChange={e => setForm({ ...form, wholesale_price: e.target.value })} placeholder="70 or 70/700" style={inputStyle} />
-                    <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 3 }}>Shown encoded in wholesale app</div>
-                  </div>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div>
                     <label style={labelStyle}>Purchase Price (₹)</label>
                     <input type="number" value={form.purchase_price} onChange={e => setForm({ ...form, purchase_price: e.target.value })} placeholder="60" style={inputStyle} />
@@ -510,14 +512,80 @@ export default function AdminPage() {
                 </div>
               </div>
 
+              {/* ── WHOLESALE PRICE + DYNAMIC LABELS ── */}
+              <div style={{ marginBottom: 14, background: "#f8f0ff", borderRadius: 12, padding: 14, border: "1.5px solid #e9d5ff" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#7c3aed", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  🏷 Wholesale Pricing
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ ...labelStyle, color: "#7c3aed" }}>Wholesale Price (₹)</label>
+                  <input
+                    type="text"
+                    value={form.wholesale_price}
+                    onChange={e => setForm({ ...form, wholesale_price: e.target.value })}
+                    placeholder="45 or 45/420/4000/38000"
+                    style={inputStyle}
+                  />
+                  <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 3 }}>
+                    Use slash for multiple tiers: 45/420/4000/38000 — label fields appear below automatically
+                  </div>
+                </div>
+
+                {/* Dynamic label fields — one per slash price */}
+                {getWsPriceCount() > 0 && (
+                  <div>
+                    <label style={{ ...labelStyle, fontSize: 10, color: "#7c3aed", marginBottom: 8, display: "block" }}>
+                      Labels for each price tier (what does each price represent?)
+                    </label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {form.wholesale_price.split("/").map((priceStr, i) => {
+                        const price = priceStr.trim();
+                        if (!price || isNaN(Number(price))) return null;
+                        const currentLabels = getWsLabels();
+                        const labelVal = currentLabels[i] || "";
+                        return (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ background: "#7c3aed", color: "#fff", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 800, minWidth: 64, textAlign: "center", flexShrink: 0 }}>
+                              ₹{price}
+                            </div>
+                            <input
+                              value={labelVal}
+                              onChange={e => updateWsLabel(i, e.target.value)}
+                              placeholder={`e.g. 1 pc, 1 pkt, 1 box, 1 carton...`}
+                              style={{ ...inputStyle, margin: 0, background: "#fff" }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Preview */}
+                    {getWsLabels().some(l => l.trim()) && (
+                      <div style={{ marginTop: 10, background: "#ede9fe", borderRadius: 8, padding: "8px 10px" }}>
+                        <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, marginBottom: 4 }}>PREVIEW IN WHOLESALE APP:</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {form.wholesale_price.split("/").map((priceStr, i) => {
+                            const price = priceStr.trim();
+                            if (!price || isNaN(Number(price))) return null;
+                            const label = getWsLabels()[i] || `Tier ${i + 1}`;
+                            return (
+                              <span key={i} style={{ background: "#7c3aed", color: "#fff", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+                                {label}: ***
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Variants */}
               <div style={{ marginBottom: 14, background: "#f0f9ff", borderRadius: 12, padding: 14, border: "1.5px solid #bae6fd" }}>
-                <label style={{ ...labelStyle, color: "#0369a1", marginBottom: 6, display: "block" }}>📦 Price Variants — manual labels (optional)</label>
+                <label style={{ ...labelStyle, color: "#0369a1", marginBottom: 6, display: "block" }}>📦 Price Variants — for retail website (optional)</label>
                 <input value={form.variants} onChange={e => setForm({ ...form, variants: e.target.value })} placeholder="1 pc:45, 10 pcs:420" style={{ ...inputStyle, background: "#fff" }} />
-                <div style={{ fontSize: 10, color: "#0369a1", marginTop: 4 }}>
-                  Format: label:price — e.g. "1 pc:45, 10 pcs:420"<br />
-                  If blank, slash prices above are used automatically.
-                </div>
+                <div style={{ fontSize: 10, color: "#0369a1", marginTop: 4 }}>Format: label:price — e.g. "1 pc:45, 10 pcs:420"</div>
               </div>
 
               {/* Vendor Prices */}
@@ -581,7 +649,7 @@ export default function AdminPage() {
                 <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Select multiple. New categories auto-capitalize.</div>
               </div>
 
-              {/* ── IMAGES — Cloudinary ── */}
+              {/* Images — Cloudinary */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Images</label>
                 <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: uploadingImages ? "#dbeafe" : "#eff6ff", border: "2px dashed #93c5fd", borderRadius: 10, padding: "12px", cursor: uploadingImages ? "wait" : "pointer", fontSize: 12, color: "#2563eb", fontWeight: 600, marginBottom: 8 }}>
@@ -611,7 +679,7 @@ export default function AdminPage() {
                   />
                   {uploadingImages ? "⏳ Uploading to Cloudinary..." : "📷 Upload Images (select multiple)"}
                 </label>
-                <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} placeholder={"https://res.cloudinary.com/dklbnna8p/...\n(paste URLs or upload above)"} rows={2} style={{ ...inputStyle, resize: "vertical" as const }} />
+                <textarea value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} placeholder={"https://res.cloudinary.com/...\n(paste URLs or upload above)"} rows={2} style={{ ...inputStyle, resize: "vertical" as const }} />
                 {form.image_url && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
                     {form.image_url.split("\n").map((url, i) => {
@@ -630,7 +698,7 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* ── VIDEO — Cloudinary ── */}
+              {/* Video — Cloudinary */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Video</label>
                 <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: uploadingVideo ? "#f3e8ff" : "#fdf4ff", border: "2px dashed #d8b4fe", borderRadius: 10, padding: "10px", cursor: uploadingVideo ? "wait" : "pointer", fontSize: 12, color: "#7c3aed", fontWeight: 600, marginBottom: 8 }}>
