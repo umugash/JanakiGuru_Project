@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 
 const ADMIN_PASSWORD = "janaki@admin2025";
@@ -15,6 +15,7 @@ interface Product {
   video_url?: string; keywords: string | string[];
   short_description?: string; long_description?: string;
   vendors?: { name: string; price: number }[];
+  _searchText?: string;
 }
 interface Order {
   id: string; customer_name: string; phone: string; address: string;
@@ -31,6 +32,89 @@ const emptyForm = {
   short_description: "", long_description: "",
 };
 const emptyStaffForm = { name: "", password: "" };
+
+// ── INSTANT INDEXING: Pre-compute ALL searchable text on load
+function indexProducts(products: Product[]): Product[] {
+  return products.map(p => ({
+    ...p,
+    _searchText: [
+      p.name,
+      (p as any).barcode || "",
+      Array.isArray((p as any).barcodes) ? (p as any).barcodes.join(" ") : "",
+      Array.isArray(p.keywords) ? (p.keywords as string[]).join(" ") : String(p.keywords || ""),
+    ].join(" ").toLowerCase()
+  }));
+}
+
+// ── MEMOIZED FILTER
+function useInstantFilter(products: Product[], query: string): Product[] {
+  return useMemo(() => {
+    if (!query.trim()) return products;
+    const words = query.toLowerCase().split(" ").filter(Boolean);
+    if (words.length === 0) return products;
+    return products.filter(p => {
+      const text = p._searchText || "";
+      for (let i = 0; i < words.length; i++) {
+        if (text.indexOf(words[i]) === -1) return false;
+      }
+      return true;
+    });
+  }, [products, query]);
+}
+
+// ── VIRTUAL SCROLL: Only render visible items
+const VirtualProductList = ({ products, onEdit, onDelete, getCatStr }: any) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 30 });
+  const ITEM_HEIGHT = 96;
+  const BUFFER = 5;
+
+  const handleScroll = useCallback(() => {
+    if (!containerRef.current) return;
+    const scrollTop = containerRef.current.scrollTop;
+    const visibleHeight = containerRef.current.clientHeight;
+    const start = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - BUFFER);
+    const end = Math.min(products.length, Math.ceil((scrollTop + visibleHeight) / ITEM_HEIGHT) + BUFFER);
+    setVisibleRange({ start, end });
+  }, [products.length]);
+
+  const visibleProducts = useMemo(() =>
+    products.slice(visibleRange.start, visibleRange.end),
+    [products, visibleRange]
+  );
+
+  return (
+    <div ref={containerRef} onScroll={handleScroll} style={{ height: "600px", overflowY: "auto", position: "relative" }}>
+      <div style={{ height: visibleRange.start * ITEM_HEIGHT }} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {visibleProducts.map(p => (
+          <div key={p.id} style={{ background: "#fff", borderRadius: 14, padding: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", background: "#fff5f5", flexShrink: 0, border: "1px solid #fee2e2" }}>
+              {p.image_url?.[0] ? <img src={p.image_url[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>{p.name}</div>
+              <div style={{ fontSize: 11, color: "#64748b" }}>{getCatStr(p.category)}</div>
+              <div style={{ fontSize: 11, marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{(p as any).price_text || p.price}</span>
+                <span style={{ color: "#94a3b8", textDecoration: "line-through" }}>₹{p.mrp}</span>
+                {(p as any).website_price && <span style={{ fontWeight: 700, color: "#2563eb" }}>Web:₹{(p as any).website_price}</span>}
+                {p.wholesale_price && <span style={{ fontWeight: 700, color: "#0ea5e9" }}>WS:₹{p.wholesale_price}</span>}
+                {p.purchase_price && <span style={{ fontWeight: 700, color: "#16a34a" }}>P:₹{p.purchase_price}</span>}
+                {Array.isArray((p as any).vendors) && (p as any).vendors.length > 0 && <span style={{ fontWeight: 600, color: "#8b5cf6" }}>🏪 {(p as any).vendors.length}v</span>}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              <button onClick={() => onEdit(p)} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>✏️</button>
+              <button onClick={() => onDelete(p.id)} style={{ background: "#fff5f5", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🗑</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ height: (products.length - visibleRange.end) * ITEM_HEIGHT }} />
+    </div>
+  );
+};
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
@@ -63,6 +147,10 @@ export default function AdminPage() {
   const [cipherInput, setCipherInput] = useState("");
   const [cipherMsg, setCipherMsg] = useState({ text: "", type: "" });
   const [cipherLoading, setCipherLoading] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+
+  // ── INSTANT FILTER with memoization
+  const filteredAdminProducts = useInstantFilter(products, adminSearch);
 
   useEffect(() => {
     setIsMounted(true);
@@ -74,9 +162,28 @@ export default function AdminPage() {
   }, [authed]);
 
   async function fetchProducts() {
-    const { data } = await supabase.from("products").select("*").order("name");
-    if (data) setProducts(data);
+    setLoadingProducts(true);
+    const chunk = 1000;
+    let from = 0;
+    let allData: Product[] = [];
+    while (true) {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .order("name")
+        .range(from, from + chunk - 1);
+      if (error) { console.error("fetchProducts error:", error.message); break; }
+      if (!data || data.length === 0) break;
+      allData = [...allData, ...data];
+      // update state each chunk so user sees products appearing
+      setProducts(indexProducts([...allData]));
+      if (data.length < chunk) break;
+      from += chunk;
+    }
+    setProducts(indexProducts(allData));
+    setLoadingProducts(false);
   }
+
   async function fetchOrders() {
     const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
     if (data) setOrders(data);
@@ -146,18 +253,15 @@ export default function AdminPage() {
     setVendors(v => v.map((vendor, i) => i === index ? { ...vendor, [field]: value } : vendor));
   }
 
-  // Parse wholesale price slash values to determine how many label fields to show
   function getWsPriceCount(): number {
     const prices = form.wholesale_price.split("/").map(s => s.trim()).filter(s => s && !isNaN(Number(s)));
     return prices.length;
   }
 
-  // Get current wholesale labels as array
   function getWsLabels(): string[] {
     return form.wholesale_labels.split(",").map(s => s.trim());
   }
 
-  // Update a specific label by index
   function updateWsLabel(index: number, value: string) {
     const labels = getWsLabels();
     while (labels.length <= index) labels.push("");
@@ -253,13 +357,6 @@ export default function AdminPage() {
     fetchProducts(); setDeleteId(null);
   }
 
-  const filteredAdminProducts = products.filter(p => {
-    if (!adminSearch.trim()) return true;
-    const words = adminSearch.toLowerCase().trim().split(" ").filter(Boolean);
-    const searchText = [p.name || "", (p as any).barcode || "", ...(Array.isArray((p as any).barcodes) ? (p as any).barcodes : []), ...(Array.isArray(p.keywords) ? p.keywords as string[] : [String(p.keywords || "")])].join(" ").toLowerCase();
-    return words.every(word => searchText.includes(word));
-  });
-
   const activeStaff = staffUsers.filter(s => s.status === "active");
   const revokedStaff = staffUsers.filter(s => s.status === "revoked");
 
@@ -293,7 +390,7 @@ export default function AdminPage() {
 
       <div style={{ background: "#fff", borderBottom: "2px solid #e2e8f0", display: "flex", position: "sticky", top: 52, zIndex: 99 }}>
         {([
-          { key: "products", label: `📦 Products (${products.length})` },
+          { key: "products", label: loadingProducts ? `📦 Loading...` : `📦 Products (${products.length})` },
           { key: "orders", label: `🛒 Orders (${orders.length})` },
           { key: "staff", label: `👥 Staff (${activeStaff.length})` },
           { key: "addproduct", label: editId ? "✏️ Edit" : "➕ Add" },
@@ -312,38 +409,33 @@ export default function AdminPage() {
               <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>All Products</div>
               <button onClick={() => { resetForm(); setTab("addproduct"); }} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Add New</button>
             </div>
-            <div style={{ position: "relative", marginBottom: 12 }}>
-              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14 }}>🔍</span>
-              <input value={adminSearch} onChange={e => setAdminSearch(e.target.value)} placeholder="Search by name, barcode or keyword..."
-                style={{ width: "100%", border: "2px solid #e2e8f0", borderRadius: 10, padding: "9px 12px 9px 36px", fontSize: 13, fontFamily: "system-ui,sans-serif", color: "#1e293b", background: "#f8fafc", outline: "none", boxSizing: "border-box" as const }} />
-              {adminSearch && <button onClick={() => setAdminSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", fontSize: 16, color: "#94a3b8", cursor: "pointer" }}>✕</button>}
-            </div>
-            {adminSearch && <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{filteredAdminProducts.length} result{filteredAdminProducts.length !== 1 ? "s" : ""} found</div>}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {filteredAdminProducts.map(p => (
-                <div key={p.id} style={{ background: "#fff", borderRadius: 14, padding: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", background: "#fff5f5", flexShrink: 0, border: "1px solid #fee2e2" }}>
-                    {p.image_url?.[0] ? <img src={p.image_url[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "#64748b" }}>{getCatStr(p.category)}</div>
-                    <div style={{ fontSize: 11, marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{(p as any).price_text || p.price}</span>
-                      <span style={{ color: "#94a3b8", textDecoration: "line-through" }}>₹{p.mrp}</span>
-                      {(p as any).website_price && <span style={{ fontWeight: 700, color: "#2563eb" }}>Web:₹{(p as any).website_price}</span>}
-                      {p.wholesale_price && <span style={{ fontWeight: 700, color: "#0ea5e9" }}>WS:₹{p.wholesale_price}</span>}
-                      {p.purchase_price && <span style={{ fontWeight: 700, color: "#16a34a" }}>P:₹{p.purchase_price}</span>}
-                      {Array.isArray((p as any).vendors) && (p as any).vendors.length > 0 && <span style={{ fontWeight: 600, color: "#8b5cf6" }}>🏪 {(p as any).vendors.length}v</span>}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    <button onClick={() => startEdit(p)} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>✏️</button>
-                    <button onClick={() => setDeleteId(p.id)} style={{ background: "#fff5f5", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🗑</button>
-                  </div>
+
+            {loadingProducts && (
+              <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8" }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>⏳</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Loading {products.length} products...</div>
+              </div>
+            )}
+
+            {!loadingProducts && (
+              <>
+                <div style={{ position: "relative", marginBottom: 12 }}>
+                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14 }}>🔍</span>
+                  <input value={adminSearch} onChange={e => setAdminSearch(e.target.value)} type="text" placeholder="Search by name, barcode or keyword... (instant)"
+                    style={{ width: "100%", border: "2px solid #e2e8f0", borderRadius: 10, padding: "9px 12px 9px 36px", fontSize: 13, fontFamily: "system-ui,sans-serif", color: "#1e293b", background: "#f8fafc", outline: "none", boxSizing: "border-box" as const }} />
+                  {adminSearch && <button onClick={() => setAdminSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", fontSize: 16, color: "#94a3b8", cursor: "pointer" }}>✕</button>}
                 </div>
-              ))}
-            </div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
+                  {filteredAdminProducts.length} result{filteredAdminProducts.length !== 1 ? "s" : ""} found
+                </div>
+                <VirtualProductList
+                  products={filteredAdminProducts}
+                  onEdit={startEdit}
+                  onDelete={setDeleteId}
+                  getCatStr={getCatStr}
+                />
+              </>
+            )}
           </div>
         )}
 
@@ -512,27 +604,18 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* ── WHOLESALE PRICE + DYNAMIC LABELS ── */}
+              {/* Wholesale Price + Dynamic Labels */}
               <div style={{ marginBottom: 14, background: "#f8f0ff", borderRadius: 12, padding: 14, border: "1.5px solid #e9d5ff" }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "#7c3aed", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
                   🏷 Wholesale Pricing
                 </div>
-
                 <div style={{ marginBottom: 12 }}>
                   <label style={{ ...labelStyle, color: "#7c3aed" }}>Wholesale Price (₹)</label>
-                  <input
-                    type="text"
-                    value={form.wholesale_price}
-                    onChange={e => setForm({ ...form, wholesale_price: e.target.value })}
-                    placeholder="45 or 45/420/4000/38000"
-                    style={inputStyle}
-                  />
+                  <input type="text" value={form.wholesale_price} onChange={e => setForm({ ...form, wholesale_price: e.target.value })} placeholder="45 or 45/420/4000/38000" style={inputStyle} />
                   <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 3 }}>
                     Use slash for multiple tiers: 45/420/4000/38000 — label fields appear below automatically
                   </div>
                 </div>
-
-                {/* Dynamic label fields — one per slash price */}
                 {getWsPriceCount() > 0 && (
                   <div>
                     <label style={{ ...labelStyle, fontSize: 10, color: "#7c3aed", marginBottom: 8, display: "block" }}>
@@ -549,17 +632,12 @@ export default function AdminPage() {
                             <div style={{ background: "#7c3aed", color: "#fff", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 800, minWidth: 64, textAlign: "center", flexShrink: 0 }}>
                               ₹{price}
                             </div>
-                            <input
-                              value={labelVal}
-                              onChange={e => updateWsLabel(i, e.target.value)}
-                              placeholder={`e.g. 1 pc, 1 pkt, 1 box, 1 carton...`}
-                              style={{ ...inputStyle, margin: 0, background: "#fff" }}
-                            />
+                            <input value={labelVal} onChange={e => updateWsLabel(i, e.target.value)} placeholder="e.g. 1 pc, 1 pkt, 1 box, 1 carton..."
+                              style={{ ...inputStyle, margin: 0, background: "#fff" }} />
                           </div>
                         );
                       })}
                     </div>
-                    {/* Preview */}
                     {getWsLabels().some(l => l.trim()) && (
                       <div style={{ marginTop: 10, background: "#ede9fe", borderRadius: 8, padding: "8px 10px" }}>
                         <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, marginBottom: 4 }}>PREVIEW IN WHOLESALE APP:</div>
