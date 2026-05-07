@@ -163,22 +163,30 @@ export default function AdminPage() {
 
   async function fetchProducts() {
     setLoadingProducts(true);
-    const chunk = 1000;
-    let from = 0;
+    const limit = 1000;
+    let offset = 0;
     let allData: Product[] = [];
     while (true) {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .order("name")
-        .range(from, from + chunk - 1);
-      if (error) { console.error("fetchProducts error:", error.message); break; }
-      if (!data || data.length === 0) break;
-      allData = [...allData, ...data];
-      // update state each chunk so user sees products appearing
-      setProducts(indexProducts([...allData]));
-      if (data.length < chunk) break;
-      from += chunk;
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/products?select=*&order=name&limit=${limit}&offset=${offset}`,
+          {
+            headers: {
+              apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
+            },
+          }
+        );
+        const data = await res.json();
+        if (!data || data.length === 0) break;
+        allData = [...allData, ...data];
+        setProducts(indexProducts([...allData]));
+        if (data.length < limit) break;
+        offset += limit;
+      } catch (err) {
+        console.error("fetchProducts error:", err);
+        break;
+      }
     }
     setProducts(indexProducts(allData));
     setLoadingProducts(false);
