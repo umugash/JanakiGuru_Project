@@ -87,7 +87,7 @@ const VirtualProductList = ({ products, onEdit, onDelete, getCatStr }: any) => {
     <div ref={containerRef} onScroll={handleScroll} style={{ height: "600px", overflowY: "auto", position: "relative" }}>
       <div style={{ height: visibleRange.start * ITEM_HEIGHT }} />
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {visibleProducts.map(p => (
+        {visibleProducts.map((p: Product) => (
           <div key={p.id} style={{ background: "#fff", borderRadius: 14, padding: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", background: "#fff5f5", flexShrink: 0, border: "1px solid #fee2e2" }}>
               {p.image_url?.[0] ? <img src={p.image_url[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>}
