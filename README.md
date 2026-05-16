@@ -203,7 +203,6 @@ Vercel
 
 ---
 
-*(Create `/images` folder and upload screenshots later)*
 
 ---
 
