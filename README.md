@@ -1,36 +1,257 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<h1 align="center">🛒 Janaki Guru Retail Ecosystem</h1>
 
-## Getting Started
+<h3 align="center">
+Real-world retail & wholesale management ecosystem used by Janaki Guru Enterprises
+</h3>
 
-First, run the development server:
+<p align="center">
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+<img src="https://img.shields.io/badge/Status-Active%20Production-success"/>
+
+<img src="https://img.shields.io/badge/Products-7000%2B-blue"/>
+
+<img src="https://img.shields.io/badge/Business-Used%20Daily-orange"/>
+
+<img src="https://img.shields.io/badge/Frontend-React-61dafb?logo=react"/>
+
+<img src="https://img.shields.io/badge/TypeScript-App-blue?logo=typescript"/>
+
+<img src="https://img.shields.io/badge/Supabase-Backend-green?logo=supabase"/>
+
+</p>
+
+---
+
+# 🌍 About The Project
+
+**Janaki Guru Retail Ecosystem** is a production-oriented software system developed for **Janaki Guru Enterprises (Thoothukudi)** to support retail operations, inventory handling, pricing workflows, and business management.
+
+The platform combines:
+
+🛍 Customer retail website
+
+📊 Admin dashboard
+
+📦 Product & inventory management
+
+👤 Staff management
+
+💰 Dynamic pricing system
+
+📷 Media upload workflows
+
+The system currently supports **7000+ imported products** and is actively used in business workflows.
+
+---
+
+# 🚀 Live Deployment
+
+Customer Website:
+
+https://janaki-guru-project.vercel.app/
+
+Admin Panel:
+
+https://janaki-guru-project.vercel.app/jg-admin-2025
+
+---
+
+# ✨ Key Features
+
+### 🛍 Customer Platform
+
+✔ Product catalog
+
+✔ Variant selection (Zepto-style dropdown)
+
+✔ Swipe image gestures
+
+✔ Cart management
+
+✔ Bulk order contact system
+
+✔ Same-day delivery indicators
+
+✔ Checkout workflows
+
+
+---
+
+### 📊 Admin Dashboard
+
+✔ Product CRUD
+
+✔ Staff management
+
+✔ Pricing controls
+
+✔ Media uploads
+
+✔ Category handling
+
+✔ Barcode storage
+
+✔ Authentication system
+
+---
+
+### 📦 Inventory Management
+
+Supports:
+
+```text
+7000+ products
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Imported from legacy billing databases.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# 🧠 Advanced Features
 
-## Learn More
+### 🔐 Staff Authentication
 
-To learn more about Next.js, take a look at the following resources:
+Secure access with restricted dashboards.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 📸 Media Upload System
 
-## Deploy on Vercel
+Supports:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- imgbb image uploads
+- Cloudinary video uploads
+- Preview & delete workflows
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+### 📊 Pricing System
+
+Handles:
+
+Retail pricing
+
+Wholesale pricing
+
+Purchase pricing
+
+Custom pricing logic
+
+---
+
+### 📥 Legacy Data Import
+
+Imported thousands of existing business products from Excel datasets.
+
+---
+
+# 🛠 Tech Stack
+
+Frontend:
+
+React • TypeScript
+
+Backend:
+
+Supabase • PostgreSQL
+
+Media:
+
+imgbb • Cloudinary
+
+Hosting:
+
+Vercel
+
+---
+
+# 🖼 Screenshots
+
+## Homepage
+
+<img src="images/home.png"/>
+
+---
+
+## Product Page
+
+<img src="images/products.png"/>
+
+---
+
+## Cart
+
+<img src="images/cart.png"/>
+
+---
+
+## Admin Dashboard
+
+<img src="images/admin.png"/>
+
+---
+
+## Product Upload
+
+<img src="images/upload.png"/>
+
+---
+
+## Staff Management
+
+<img src="images/staff.png"/>
+
+---
+
+*(Create `/images` folder and upload screenshots later)*
+
+---
+
+# 📈 Business Impact
+
+This system is:
+
+✅ Deployed
+
+✅ Used in real workflows
+
+✅ Supports product management at scale
+
+✅ Built for actual business requirements
+
+---
+
+# 🔒 Access Notice
+
+Some administrative features require business credentials and are not publicly exposed.
+
+Screenshots are provided instead of demo accounts.
+
+---
+
+# 🔮 Future Improvements
+
+- Analytics dashboard
+- Sales insights
+- Automated inventory alerts
+- Supplier management
+- Invoice generation
+- Customer recommendation engine
+
+---
+
+# 👨‍💻 Developer
+
+**Mugash Priyan U**
+
+M.Tech (Integrated) CSE - Data Science
+
+SRM Institute of Science & Technology
+
+GitHub:
+
+https://github.com/umugash
+
+---
+
+⭐ If you found this project interesting, consider starring the repository.
