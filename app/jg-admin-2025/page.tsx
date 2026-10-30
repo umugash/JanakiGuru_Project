@@ -9,7 +9,7 @@ type Tab = "products" | "orders" | "staff" | "addproduct" | "settings";
 interface Vendor { name: string; price: string; }
 
 interface Product {
-  id: string; name: string; price: number; mrp: number;
+  id: string; name: string | null; price: number; mrp: number;
   wholesale_price?: number; purchase_price?: number;
   category: string | string[]; image_url: string[];
   video_url?: string; keywords: string | string[];
@@ -39,12 +39,16 @@ function indexProducts(products: Product[]): Product[] {
   return products.map(p => ({
     ...p,
     _searchText: [
-      p.name,
+      p.name || "",
       (p as any).barcode || "",
       Array.isArray((p as any).barcodes) ? (p as any).barcodes.join(" ") : "",
       Array.isArray(p.keywords) ? (p.keywords as string[]).join(" ") : String(p.keywords || ""),
     ].join(" ").toLowerCase()
   }));
+}
+
+function normalizeProductName(name: string | null | undefined): string {
+  return (name || "").trim().toLowerCase();
 }
 
 // ── MEMOIZED FILTER
@@ -108,10 +112,10 @@ const VirtualProductList = ({ products, onEdit, onDelete, onToggleWebsite, toggl
           return (
           <div key={p.id} style={{ background: onWebsite ? "#fff" : "#f8fafc", borderRadius: 14, padding: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: `1px solid ${onWebsite ? "#e2e8f0" : "#cbd5e1"}`, display: "flex", alignItems: "center", gap: 12, opacity: onWebsite ? 1 : 0.72 }}>
             <div style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", background: "#fff5f5", flexShrink: 0, border: "1px solid #fee2e2" }}>
-              {p.image_url?.[0] ? <img src={p.image_url[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>}
+              {p.image_url?.[0] ? <img src={p.image_url[0]} alt={p.name || "Product"} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>{p.name}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>{p.name || "Unnamed product"}</div>
               <div style={{ fontSize: 11, color: "#64748b" }}>{getCatStr(p.category)}</div>
               <div style={{ fontSize: 11, marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{(p as any).price_text || p.price}</span>
@@ -190,11 +194,11 @@ export default function AdminPage() {
   const nameMatches = useMemo(() => {
     if (!normalizedNameQuery) return [];
     return products
-      .filter(product => product.id !== editId && product.name.trim().toLowerCase().includes(normalizedNameQuery))
-      .sort((a, b) => Number(b.name.trim().toLowerCase() === normalizedNameQuery) - Number(a.name.trim().toLowerCase() === normalizedNameQuery))
+      .filter(product => product.id !== editId && normalizeProductName(product.name).includes(normalizedNameQuery))
+      .sort((a, b) => Number(normalizeProductName(b.name) === normalizedNameQuery) - Number(normalizeProductName(a.name) === normalizedNameQuery))
       .slice(0, 6);
   }, [products, normalizedNameQuery, editId]);
-  const exactNameMatch = products.find(product => product.id !== editId && product.name.trim().toLowerCase() === normalizedNameQuery);
+  const exactNameMatch = products.find(product => product.id !== editId && normalizeProductName(product.name) === normalizedNameQuery);
   const existingCategories = useMemo(() =>
     [...new Set(products.flatMap(getProductCategories))].sort((a, b) => a.localeCompare(b)),
     [products]
@@ -338,7 +342,7 @@ export default function AdminPage() {
 
   function startEdit(p: Product) {
     setForm({
-      name: p.name,
+      name: p.name || "",
       price: (p as any).price_text || String(p.price),
       mrp: String(p.mrp),
       wholesale_price: p.wholesale_price ? String(p.wholesale_price) : "",
@@ -377,9 +381,9 @@ export default function AdminPage() {
       setSaveDialog({ title: "Required fields missing", message });
       return;
     }
-    const duplicate = products.find(p => p.id !== editId && p.name.trim().toLowerCase() === form.name.trim().toLowerCase());
+    const duplicate = products.find(p => p.id !== editId && normalizeProductName(p.name) === form.name.trim().toLowerCase());
     if (duplicate) {
-      const message = `Product "${duplicate.name}" already exists. Enter a different product name.`;
+      const message = `Product "${duplicate.name || "Unnamed product"}" already exists. Enter a different product name.`;
       setMsg({ text: `❌ ${message}`, type: "error" });
       setSaveDialog({ title: "Duplicate product name", message });
       return;
@@ -723,10 +727,10 @@ export default function AdminPage() {
                     {form.name.trim() && nameMatches.length > 0 && (
                       <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 110, background: "#fff", border: "1px solid #fecaca", borderRadius: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.12)", marginTop: 3, maxHeight: 220, overflowY: "auto" }}>
                         {nameMatches.map(product => {
-                          const isExactMatch = product.name.trim().toLowerCase() === normalizedNameQuery;
+                          const isExactMatch = normalizeProductName(product.name) === normalizedNameQuery;
                           return (
                             <div key={product.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 11px", borderBottom: "1px solid #f1f5f9", fontSize: 12 }}>
-                              <span style={{ color: "#1e293b", fontWeight: 600 }}>{product.name}</span>
+                              <span style={{ color: "#1e293b", fontWeight: 600 }}>{product.name || "Unnamed product"}</span>
                               <span style={{ color: isExactMatch ? "#dc2626" : "#64748b", fontWeight: 700, textAlign: "right" }}>{isExactMatch ? "Product already found" : "Similar name found"}</span>
                             </div>
                           );
@@ -1084,7 +1088,7 @@ export default function AdminPage() {
             <div style={{ overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 12 }}>
               {categoryDeleteDialog.products.map(product => (
                 <div key={product.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "9px 10px", borderBottom: "1px solid #f1f5f9" }}>
-                  <span style={{ minWidth: 0, overflowWrap: "anywhere", fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{product.name}</span>
+                  <span style={{ minWidth: 0, overflowWrap: "anywhere", fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{product.name || "Unnamed product"}</span>
                   <button type="button" onClick={() => {
                     setPendingCategoryDeletion(categoryDeleteDialog.category);
                     setCategoryDeleteDialog(null);
