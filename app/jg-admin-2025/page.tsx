@@ -413,7 +413,7 @@ export default function AdminPage() {
       barcodes: form.barcodes ? form.barcodes.split(",").map((s) => s.trim()).filter(Boolean) : [],
       barcode: form.barcodes ? form.barcodes.split(",").map((s) => s.trim()).filter(Boolean)[0] || null : null,
       variants_text: form.variants.trim() || null,
-      category: selectedCategories,
+      category: JSON.stringify(selectedCategories),
       image_url: form.image_url.split("\n").map((s: string) => s.trim()).filter(Boolean),
       video_url: form.video_url.trim() || null,
       keywords: form.keywords.split(",").map((s: string) => s.trim()).filter(Boolean),
