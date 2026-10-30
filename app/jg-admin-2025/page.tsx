@@ -155,6 +155,8 @@ export default function AdminPage() {
   const [pwError, setPwError] = useState("");
   const [tab, setTab] = useState<Tab>("products");
   const [products, setProducts] = useState<Product[]>([]);
+  const [categoryNames, setCategoryNames] = useState<string[]>([]);
+  const [categoryRegistryReady, setCategoryRegistryReady] = useState(false);
   const [adminSearch, setAdminSearch] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
@@ -199,10 +201,14 @@ export default function AdminPage() {
       .slice(0, 6);
   }, [products, normalizedNameQuery, editId]);
   const exactNameMatch = products.find(product => product.id !== editId && normalizeProductName(product.name) === normalizedNameQuery);
-  const existingCategories = useMemo(() =>
-    [...new Set(products.flatMap(getProductCategories))].sort((a, b) => a.localeCompare(b)),
-    [products]
-  );
+  const existingCategories = useMemo(() => {
+    const categoriesByKey = new Map<string, string>();
+    for (const category of [...categoryNames, ...products.flatMap(getProductCategories)]) {
+      const key = category.toLowerCase();
+      if (!categoriesByKey.has(key)) categoriesByKey.set(key, category);
+    }
+    return [...categoriesByKey.values()].sort((a, b) => a.localeCompare(b));
+  }, [products, categoryNames]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -210,8 +216,19 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (authed) { fetchProducts(); fetchOrders(); fetchStaff(); fetchCipherKey(); }
+    if (authed) { fetchProducts(); fetchCategories(); fetchOrders(); fetchStaff(); fetchCipherKey(); }
   }, [authed]);
+
+  async function fetchCategories() {
+    const { data, error } = await supabase.from("categories").select("name").order("name");
+    if (error) {
+      console.error("fetchCategories error:", error);
+      setCategoryRegistryReady(false);
+      return;
+    }
+    setCategoryNames((data || []).map(category => category.name));
+    setCategoryRegistryReady(true);
+  }
 
   async function fetchProducts() {
     setLoadingProducts(true);
@@ -307,11 +324,24 @@ export default function AdminPage() {
     return "";
   }
 
-  function requestCategoryDeletion(category: string) {
+  async function requestCategoryDeletion(category: string) {
+    if (!categoryRegistryReady) {
+      setSaveDialog({
+        title: "Category registry is not ready",
+        message: "Run sql/add-categories-registry.sql in the Supabase SQL Editor, then refresh this admin page.",
+      });
+      return;
+    }
     const affectedProducts = products.filter(product => productHasCategory(product, category));
     if (affectedProducts.length === 0) {
       if (window.confirm(`Do you want to delete the "${category}" category permanently? 0 products found in this category.`)) {
-        setProductsMsg({ text: `"${category}" has no products and is no longer in the catalogue.`, type: "success" });
+        const { error } = await supabase.from("categories").delete().eq("name", category);
+        if (error) {
+          setSaveDialog({ title: "Category could not be deleted", message: error.message });
+          return;
+        }
+        setCategoryNames(prev => prev.filter(name => name.toLowerCase() !== category.toLowerCase()));
+        setProductsMsg({ text: `"${category}" has been deleted permanently.`, type: "success" });
       }
       return;
     }
@@ -375,10 +405,16 @@ export default function AdminPage() {
   }
 
   async function handleSave() {
-    if (!form.name.trim() || !form.price.trim() || !form.mrp.trim() || selectedCategories.length === 0) {
-      const message = "⚠ Please fill Name, Price, MRP and at least one Category";
+    const missingField = [
+      { label: "Product name", missing: !form.name.trim() },
+      { label: "Price", missing: !form.price.trim() },
+      { label: "MRP", missing: !form.mrp.trim() },
+      { label: "Category", missing: selectedCategories.length === 0 },
+    ].find(field => field.missing);
+    if (missingField) {
+      const message = `${missingField.label} is missing.`;
       setMsg({ text: message, type: "error" });
-      setSaveDialog({ title: "Required fields missing", message });
+      setSaveDialog({ title: "Missing required field", message });
       return;
     }
     const duplicate = products.find(p => p.id !== editId && normalizeProductName(p.name) === form.name.trim().toLowerCase());
@@ -389,16 +425,12 @@ export default function AdminPage() {
       return;
     }
 
-    const categoryWillBeRemoved = Boolean(
-      pendingCategoryDeletion && editId &&
+    const categoryToDeleteAfterSave = pendingCategoryDeletion && editId &&
       !selectedCategories.some(category => category.toLowerCase() === pendingCategoryDeletion.toLowerCase()) &&
       products.some(product => product.id === editId && productHasCategory(product, pendingCategoryDeletion)) &&
       !products.some(product => product.id !== editId && productHasCategory(product, pendingCategoryDeletion))
-    );
-    if (categoryWillBeRemoved && !window.confirm(`Do you want to delete the "${pendingCategoryDeletion}" category permanently? 0 products will remain in this category.`)) {
-      setMsg({ text: `Reassignment cancelled. Keep a product in "${pendingCategoryDeletion}" or confirm its removal.`, type: "error" });
-      return;
-    }
+      ? pendingCategoryDeletion
+      : null;
     setSaving(true); setMsg({ text: "", type: "" });
 
     const vendorArr = vendors.filter(v => v.name.trim() && v.price).map(v => ({ name: v.name.trim(), price: Number(v.price) }));
@@ -433,10 +465,48 @@ export default function AdminPage() {
         const { error } = await supabase.from("products").insert([payload]);
         if (error) throw error;
       }
+
+      if (editId) {
+        setProducts(prev => indexProducts(prev.map(product => product.id === editId ? { ...product, ...payload } : product)));
+      }
+
+      const categoryIssues: string[] = [];
+      if (categoryRegistryReady) {
+        const { error } = await supabase.from("categories").upsert(
+          selectedCategories.map(name => ({ name })),
+          { onConflict: "name", ignoreDuplicates: true }
+        );
+        if (error) {
+          categoryIssues.push(`Product saved, but selected categories could not be synced: ${error.message}`);
+        } else {
+          setCategoryNames(prev => [...new Set([...prev, ...selectedCategories])]);
+        }
+      }
+
+      if (categoryToDeleteAfterSave) {
+        const confirmDelete = window.confirm(`Do you want to delete the "${categoryToDeleteAfterSave}" category permanently? 0 products will remain in this category.`);
+        if (confirmDelete) {
+          const { error } = await supabase.from("categories").delete().eq("name", categoryToDeleteAfterSave);
+          if (error) {
+            categoryIssues.push(`Product updated, but the category could not be deleted: ${error.message}`);
+          } else {
+            setCategoryNames(prev => prev.filter(name => name.toLowerCase() !== categoryToDeleteAfterSave.toLowerCase()));
+          }
+        }
+        setPendingCategoryDeletion(null);
+      }
+
       setMsg({ text: editId ? "✅ Updated!" : "✅ Product added!", type: "success" });
-      if (categoryWillBeRemoved) setPendingCategoryDeletion(null);
-      fetchProducts(); setSaving(false);
-      const keepPendingCategory = Boolean(pendingCategoryDeletion && !categoryWillBeRemoved);
+      fetchProducts();
+      if (categoryRegistryReady) fetchCategories();
+      setSaving(false);
+      if (categoryIssues.length > 0) {
+        setSaveDialog({
+          title: "Product saved; category action needs attention",
+          message: categoryIssues.join("\n\n") + "\n\nConfirm that sql/add-categories-registry.sql has been run in Supabase.",
+        });
+      }
+      const keepPendingCategory = Boolean(pendingCategoryDeletion && !categoryToDeleteAfterSave);
       setTimeout(() => { resetForm(!keepPendingCategory); setTab("products"); setMsg({ text: "", type: "" }); }, 1500);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error
