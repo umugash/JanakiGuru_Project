@@ -64,7 +64,7 @@ function useInstantFilter(products: Product[], query: string): Product[] {
 }
 
 // ── VIRTUAL SCROLL: Only render visible items
-const VirtualProductList = ({ products, onEdit, onDelete, onToggleWebsite, togglingId, getCatStr }: any) => {
+const VirtualProductList = ({ products, onEdit, onDelete, onToggleWebsite, togglingId, visibilityUpdating, getCatStr }: any) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 30 });
   const ITEM_HEIGHT = 108;
@@ -114,9 +114,9 @@ const VirtualProductList = ({ products, onEdit, onDelete, onToggleWebsite, toggl
               </div>
               <button
                 onClick={() => onToggleWebsite(p)}
-                disabled={togglingId === p.id}
+                disabled={visibilityUpdating || togglingId === p.id}
                 title={onWebsite ? "Showing on retail website — click to hide" : "Hidden from retail website — click to show"}
-                style={{ background: onWebsite ? "#16a34a" : "#94a3b8", border: "none", borderRadius: 20, padding: "4px 10px", color: "#fff", fontSize: 10, fontWeight: 700, cursor: togglingId === p.id ? "wait" : "pointer", opacity: togglingId === p.id ? 0.7 : 1, whiteSpace: "nowrap" }}
+                style={{ background: onWebsite ? "#16a34a" : "#94a3b8", border: "none", borderRadius: 20, padding: "4px 10px", color: "#fff", fontSize: 10, fontWeight: 700, cursor: visibilityUpdating || togglingId === p.id ? "wait" : "pointer", opacity: visibilityUpdating || togglingId === p.id ? 0.7 : 1, whiteSpace: "nowrap" }}
               >
                 {onWebsite ? "Web ON" : "Web OFF"}
               </button>
@@ -163,6 +163,7 @@ export default function AdminPage() {
   const [cipherLoading, setCipherLoading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [togglingWebsiteId, setTogglingWebsiteId] = useState<string | null>(null);
+  const [bulkVisibilityLoading, setBulkVisibilityLoading] = useState(false);
   const [productsMsg, setProductsMsg] = useState({ text: "", type: "" });
 
   // ── INSTANT FILTER with memoization
@@ -399,6 +400,33 @@ export default function AdminPage() {
     setTogglingWebsiteId(null);
   }
 
+  async function setAllWebsiteVisibility(visible: boolean) {
+    const confirmation = visible
+      ? "Are you sure you want to enable all products in the catalogue?"
+      : "Are you sure you want to disable all products from the catalogue?";
+    if (!window.confirm(confirmation)) return;
+
+    setBulkVisibilityLoading(true);
+    setProductsMsg({ text: "", type: "" });
+    try {
+      const { error } = await supabase.from("products").update({ show_on_website: visible }).not("id", "is", null);
+      if (error) throw error;
+
+      setProducts(prev => indexProducts(prev.map(product => ({ ...product, show_on_website: visible }))));
+      setProductsMsg({
+        text: visible ? "All products are now enabled on the website." : "All products are now hidden from the website.",
+        type: "success",
+      });
+    } catch (error: unknown) {
+      setProductsMsg({
+        text: "❌ Could not update website visibility for all products. " + (error instanceof Error ? error.message : "Unknown error"),
+        type: "error",
+      });
+    } finally {
+      setBulkVisibilityLoading(false);
+    }
+  }
+
   const activeStaff = staffUsers.filter(s => s.status === "active");
   const revokedStaff = staffUsers.filter(s => s.status === "revoked");
 
@@ -447,9 +475,13 @@ export default function AdminPage() {
         {/* ── PRODUCTS ── */}
         {tab === "products" && (
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>All Products</div>
-              <button onClick={() => { resetForm(); setTab("addproduct"); }} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Add New</button>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button onClick={() => setAllWebsiteVisibility(false)} disabled={bulkVisibilityLoading || !!togglingWebsiteId || loadingProducts || products.length === 0} style={{ background: "#fff5f5", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, cursor: bulkVisibilityLoading || togglingWebsiteId || loadingProducts ? "wait" : "pointer", opacity: bulkVisibilityLoading || togglingWebsiteId || loadingProducts || products.length === 0 ? 0.6 : 1 }}>Disable All</button>
+                <button onClick={() => setAllWebsiteVisibility(true)} disabled={bulkVisibilityLoading || !!togglingWebsiteId || loadingProducts || products.length === 0} style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#15803d", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, cursor: bulkVisibilityLoading || togglingWebsiteId || loadingProducts ? "wait" : "pointer", opacity: bulkVisibilityLoading || togglingWebsiteId || loadingProducts || products.length === 0 ? 0.6 : 1 }}>Enable All</button>
+                <button onClick={() => { resetForm(); setTab("addproduct"); }} style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "none", borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Add New</button>
+              </div>
             </div>
 
             {loadingProducts && (
@@ -479,6 +511,7 @@ export default function AdminPage() {
                   onDelete={setDeleteId}
                   onToggleWebsite={toggleWebsiteVisibility}
                   togglingId={togglingWebsiteId}
+                  visibilityUpdating={bulkVisibilityLoading}
                   getCatStr={getCatStr}
                 />
               </>
