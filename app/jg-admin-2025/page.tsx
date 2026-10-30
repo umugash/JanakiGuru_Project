@@ -15,6 +15,7 @@ interface Product {
   video_url?: string; keywords: string | string[];
   short_description?: string; long_description?: string;
   vendors?: { name: string; price: number }[];
+  show_on_website?: boolean;
   _searchText?: string;
 }
 interface Order {
@@ -63,10 +64,10 @@ function useInstantFilter(products: Product[], query: string): Product[] {
 }
 
 // ── VIRTUAL SCROLL: Only render visible items
-const VirtualProductList = ({ products, onEdit, onDelete, getCatStr }: any) => {
+const VirtualProductList = ({ products, onEdit, onDelete, onToggleWebsite, togglingId, getCatStr }: any) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 30 });
-  const ITEM_HEIGHT = 96;
+  const ITEM_HEIGHT = 108;
   const BUFFER = 5;
 
   const handleScroll = useCallback(() => {
@@ -87,8 +88,10 @@ const VirtualProductList = ({ products, onEdit, onDelete, getCatStr }: any) => {
     <div ref={containerRef} onScroll={handleScroll} style={{ height: "600px", overflowY: "auto", position: "relative" }}>
       <div style={{ height: visibleRange.start * ITEM_HEIGHT }} />
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {visibleProducts.map((p: Product) => (
-          <div key={p.id} style={{ background: "#fff", borderRadius: 14, padding: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 12 }}>
+        {visibleProducts.map((p: Product) => {
+          const onWebsite = p.show_on_website !== false;
+          return (
+          <div key={p.id} style={{ background: onWebsite ? "#fff" : "#f8fafc", borderRadius: 14, padding: 14, boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: `1px solid ${onWebsite ? "#e2e8f0" : "#cbd5e1"}`, display: "flex", alignItems: "center", gap: 12, opacity: onWebsite ? 1 : 0.72 }}>
             <div style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", background: "#fff5f5", flexShrink: 0, border: "1px solid #fee2e2" }}>
               {p.image_url?.[0] ? <img src={p.image_url[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>}
             </div>
@@ -104,12 +107,23 @@ const VirtualProductList = ({ products, onEdit, onDelete, getCatStr }: any) => {
                 {Array.isArray((p as any).vendors) && (p as any).vendors.length > 0 && <span style={{ fontWeight: 600, color: "#8b5cf6" }}>🏪 {(p as any).vendors.length}v</span>}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-              <button onClick={() => onEdit(p)} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>✏️</button>
-              <button onClick={() => onDelete(p.id)} style={{ background: "#fff5f5", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🗑</button>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => onEdit(p)} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>✏️</button>
+                <button onClick={() => onDelete(p.id)} style={{ background: "#fff5f5", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🗑</button>
+              </div>
+              <button
+                onClick={() => onToggleWebsite(p)}
+                disabled={togglingId === p.id}
+                title={onWebsite ? "Showing on retail website — click to hide" : "Hidden from retail website — click to show"}
+                style={{ background: onWebsite ? "#16a34a" : "#94a3b8", border: "none", borderRadius: 20, padding: "4px 10px", color: "#fff", fontSize: 10, fontWeight: 700, cursor: togglingId === p.id ? "wait" : "pointer", opacity: togglingId === p.id ? 0.7 : 1, whiteSpace: "nowrap" }}
+              >
+                {onWebsite ? "Web ON" : "Web OFF"}
+              </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
       <div style={{ height: (products.length - visibleRange.end) * ITEM_HEIGHT }} />
     </div>
@@ -148,6 +162,8 @@ export default function AdminPage() {
   const [cipherMsg, setCipherMsg] = useState({ text: "", type: "" });
   const [cipherLoading, setCipherLoading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
+  const [togglingWebsiteId, setTogglingWebsiteId] = useState<string | null>(null);
+  const [productsMsg, setProductsMsg] = useState({ text: "", type: "" });
 
   // ── INSTANT FILTER with memoization
   const filteredAdminProducts = useInstantFilter(products, adminSearch);
@@ -343,6 +359,7 @@ export default function AdminPage() {
       long_description: form.long_description.trim() || null,
       vendors: vendorArr.length > 0 ? vendorArr : [],
     };
+    if (!editId) payload.show_on_website = true;
 
     try {
       if (editId) {
@@ -363,6 +380,23 @@ export default function AdminPage() {
   async function handleDelete(id: string) {
     await supabase.from("products").delete().eq("id", id);
     fetchProducts(); setDeleteId(null);
+  }
+
+  async function toggleWebsiteVisibility(p: Product) {
+    const current = p.show_on_website !== false;
+    const next = !current;
+    setTogglingWebsiteId(p.id);
+    setProductsMsg({ text: "", type: "" });
+    setProducts(prev => indexProducts(prev.map(x => x.id === p.id ? { ...x, show_on_website: next } : x)));
+    const { error } = await supabase.from("products").update({ show_on_website: next }).eq("id", p.id);
+    if (error) {
+      setProducts(prev => indexProducts(prev.map(x => x.id === p.id ? { ...x, show_on_website: current } : x)));
+      setProductsMsg({
+        text: "❌ Could not update website visibility. Add a boolean column `show_on_website` (default true) on the products table in Supabase, then try again. " + error.message,
+        type: "error",
+      });
+    }
+    setTogglingWebsiteId(null);
   }
 
   const activeStaff = staffUsers.filter(s => s.status === "active");
@@ -436,10 +470,15 @@ export default function AdminPage() {
                 <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
                   {filteredAdminProducts.length} result{filteredAdminProducts.length !== 1 ? "s" : ""} found
                 </div>
+                {productsMsg.text && (
+                  <div style={{ background: productsMsg.type === "success" ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${productsMsg.type === "success" ? "#86efac" : "#fca5a5"}`, borderRadius: 10, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: productsMsg.type === "success" ? "#16a34a" : "#dc2626", marginBottom: 10 }}>{productsMsg.text}</div>
+                )}
                 <VirtualProductList
                   products={filteredAdminProducts}
                   onEdit={startEdit}
                   onDelete={setDeleteId}
+                  onToggleWebsite={toggleWebsiteVisibility}
+                  togglingId={togglingWebsiteId}
                   getCatStr={getCatStr}
                 />
               </>

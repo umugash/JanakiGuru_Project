@@ -89,6 +89,7 @@ export default function Home() {
       
       // Start with offset 0
       let allData: any[] = [];
+      const hiddenIds = new Set<string>();
       let offset = 0;
       const limit = 1000; // Supabase max limit per request
       let hasMoreData = true;
@@ -112,7 +113,10 @@ export default function Home() {
           hasMoreData = false;
         }
         
-        allData.push(...data);
+        for (const p of data) {
+          if (p.show_on_website === false) hiddenIds.add(p.id);
+          else allData.push(p);
+        }
         offset += limit;
 
         console.log(`✅ Fetched ${allData.length} products so far...`);
@@ -121,6 +125,9 @@ export default function Home() {
       console.log(`✅✅ DONE! Total products fetched: ${allData.length}`);
       
       setAllProducts(allData);
+      if (hiddenIds.size > 0) {
+        setCart(prev => prev.filter(item => !hiddenIds.has(item.id)));
+      }
       
       // Extract categories from ALL products
       const extractedCategories = extractCategories(allData);
