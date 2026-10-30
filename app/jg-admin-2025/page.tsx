@@ -63,6 +63,21 @@ function useInstantFilter(products: Product[], query: string): Product[] {
   }, [products, query]);
 }
 
+function getProductCategories(product: Product): string[] {
+  if (Array.isArray(product.category)) return product.category.map(category => String(category).trim()).filter(Boolean);
+  const rawCategory = String(product.category || "").trim().replace(/\\/g, "");
+  try {
+    const parsed: unknown = JSON.parse(rawCategory);
+    if (Array.isArray(parsed)) return parsed.map(String).map(category => category.trim()).filter(Boolean);
+    if (typeof parsed === "string") return parsed.split(",").map(category => category.trim()).filter(Boolean);
+  } catch {}
+  return rawCategory.replace(/^[\["']+|[\]"']+$/g, "").split(",").map(category => category.replace(/^["'\s]+|["'\s]+$/g, "").trim()).filter(Boolean);
+}
+
+function productHasCategory(product: Product, category: string): boolean {
+  return getProductCategories(product).some(value => value.toLowerCase() === category.toLowerCase());
+}
+
 // ── VIRTUAL SCROLL: Only render visible items
 const VirtualProductList = ({ products, onEdit, onDelete, onToggleWebsite, togglingId, visibilityUpdating, getCatStr }: any) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -145,10 +160,13 @@ export default function AdminPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [categoryInput, setCategoryInput] = useState("");
   const [showCatDropdown, setShowCatDropdown] = useState(false);
+  const [categoryDeleteDialog, setCategoryDeleteDialog] = useState<{ category: string; products: Product[] } | null>(null);
+  const [pendingCategoryDeletion, setPendingCategoryDeletion] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [msg, setMsg] = useState({ text: "", type: "" });
+  const [saveDialog, setSaveDialog] = useState<{ title: string; message: string } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [expandOrder, setExpandOrder] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
@@ -168,6 +186,19 @@ export default function AdminPage() {
 
   // ── INSTANT FILTER with memoization
   const filteredAdminProducts = useInstantFilter(products, adminSearch);
+  const normalizedNameQuery = form.name.trim().toLowerCase();
+  const nameMatches = useMemo(() => {
+    if (!normalizedNameQuery) return [];
+    return products
+      .filter(product => product.id !== editId && product.name.trim().toLowerCase().includes(normalizedNameQuery))
+      .sort((a, b) => Number(b.name.trim().toLowerCase() === normalizedNameQuery) - Number(a.name.trim().toLowerCase() === normalizedNameQuery))
+      .slice(0, 6);
+  }, [products, normalizedNameQuery, editId]);
+  const exactNameMatch = products.find(product => product.id !== editId && product.name.trim().toLowerCase() === normalizedNameQuery);
+  const existingCategories = useMemo(() =>
+    [...new Set(products.flatMap(getProductCategories))].sort((a, b) => a.localeCompare(b)),
+    [products]
+  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -272,6 +303,17 @@ export default function AdminPage() {
     return "";
   }
 
+  function requestCategoryDeletion(category: string) {
+    const affectedProducts = products.filter(product => productHasCategory(product, category));
+    if (affectedProducts.length === 0) {
+      if (window.confirm(`Do you want to delete the "${category}" category permanently? 0 products found in this category.`)) {
+        setProductsMsg({ text: `"${category}" has no products and is no longer in the catalogue.`, type: "success" });
+      }
+      return;
+    }
+    setCategoryDeleteDialog({ category, products: affectedProducts });
+  }
+
   function addVendor() { if (vendors.length < 5) setVendors(v => [...v, { name: "", price: "" }]); }
   function removeVendor(index: number) { setVendors(v => v.filter((_, i) => i !== index)); }
   function updateVendor(index: number, field: "name" | "price", value: string) {
@@ -321,18 +363,37 @@ export default function AdminPage() {
     window.scrollTo(0, 0);
   }
 
-  function resetForm() {
+  function resetForm(clearPendingCategoryDeletion = true) {
     setForm(emptyForm); setVendors([]); setSelectedCategories([]);
     setCategoryInput(""); setEditId(null); setMsg({ text: "", type: "" });
+    setCategoryDeleteDialog(null);
+    if (clearPendingCategoryDeletion) setPendingCategoryDeletion(null);
   }
 
   async function handleSave() {
-    if (!form.name.trim() || !form.price || !form.mrp || selectedCategories.length === 0) {
-      setMsg({ text: "⚠ Please fill Name, Price, MRP and at least one Category", type: "error" }); return;
+    if (!form.name.trim() || !form.price.trim() || !form.mrp.trim() || selectedCategories.length === 0) {
+      const message = "⚠ Please fill Name, Price, MRP and at least one Category";
+      setMsg({ text: message, type: "error" });
+      setSaveDialog({ title: "Required fields missing", message });
+      return;
     }
-    if (!editId) {
-      const duplicate = products.find(p => p.name.trim().toLowerCase() === form.name.trim().toLowerCase());
-      if (duplicate) { setMsg({ text: `❌ Product "${form.name.trim()}" already exists!`, type: "error" }); return; }
+    const duplicate = products.find(p => p.id !== editId && p.name.trim().toLowerCase() === form.name.trim().toLowerCase());
+    if (duplicate) {
+      const message = `Product "${duplicate.name}" already exists. Enter a different product name.`;
+      setMsg({ text: `❌ ${message}`, type: "error" });
+      setSaveDialog({ title: "Duplicate product name", message });
+      return;
+    }
+
+    const categoryWillBeRemoved = Boolean(
+      pendingCategoryDeletion && editId &&
+      !selectedCategories.some(category => category.toLowerCase() === pendingCategoryDeletion.toLowerCase()) &&
+      products.some(product => product.id === editId && productHasCategory(product, pendingCategoryDeletion)) &&
+      !products.some(product => product.id !== editId && productHasCategory(product, pendingCategoryDeletion))
+    );
+    if (categoryWillBeRemoved && !window.confirm(`Do you want to delete the "${pendingCategoryDeletion}" category permanently? 0 products will remain in this category.`)) {
+      setMsg({ text: `Reassignment cancelled. Keep a product in "${pendingCategoryDeletion}" or confirm its removal.`, type: "error" });
+      return;
     }
     setSaving(true); setMsg({ text: "", type: "" });
 
@@ -360,8 +421,6 @@ export default function AdminPage() {
       long_description: form.long_description.trim() || null,
       vendors: vendorArr.length > 0 ? vendorArr : [],
     };
-    if (!editId) payload.show_on_website = true;
-
     try {
       if (editId) {
         const { error } = await supabase.from("products").update(payload).eq("id", editId);
@@ -371,10 +430,23 @@ export default function AdminPage() {
         if (error) throw error;
       }
       setMsg({ text: editId ? "✅ Updated!" : "✅ Product added!", type: "success" });
+      if (categoryWillBeRemoved) setPendingCategoryDeletion(null);
       fetchProducts(); setSaving(false);
-      setTimeout(() => { resetForm(); setTab("products"); setMsg({ text: "", type: "" }); }, 1500);
-    } catch (err: any) {
-      setMsg({ text: "❌ " + (err?.message || "Unknown error"), type: "error" }); setSaving(false);
+      const keepPendingCategory = Boolean(pendingCategoryDeletion && !categoryWillBeRemoved);
+      setTimeout(() => { resetForm(!keepPendingCategory); setTab("products"); setMsg({ text: "", type: "" }); }, 1500);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error
+        ? err.message
+        : typeof err === "object" && err !== null && "message" in err && typeof err.message === "string"
+          ? err.message
+          : "Unknown error";
+      const migrationHint = /show_on_website/i.test(errorMessage)
+        ? "\n\nIf this is a missing-column error, run sql/add-show-on-website.sql in the Supabase SQL Editor."
+        : "";
+      const message = errorMessage + migrationHint;
+      setMsg({ text: "❌ " + message, type: "error" });
+      setSaveDialog({ title: "Product could not be saved", message });
+      setSaving(false);
     }
   }
 
@@ -646,7 +718,22 @@ export default function AdminPage() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
                   <label style={labelStyle}>Product Name *</label>
-                  <input value={form.name} onChange={e => { const v = e.target.value; setForm({ ...form, name: v.charAt(0).toUpperCase() + v.slice(1) }); }} placeholder="e.g. Apsara Pencil" style={inputStyle} />
+                  <div style={{ position: "relative" }}>
+                    <input value={form.name} onChange={e => { const v = e.target.value; setForm({ ...form, name: v.charAt(0).toUpperCase() + v.slice(1) }); setMsg({ text: "", type: "" }); }} placeholder="e.g. Apsara Pencil" style={{ ...inputStyle, borderColor: exactNameMatch ? "#dc2626" : undefined }} />
+                    {form.name.trim() && nameMatches.length > 0 && (
+                      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 110, background: "#fff", border: "1px solid #fecaca", borderRadius: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.12)", marginTop: 3, maxHeight: 220, overflowY: "auto" }}>
+                        {nameMatches.map(product => {
+                          const isExactMatch = product.name.trim().toLowerCase() === normalizedNameQuery;
+                          return (
+                            <div key={product.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 11px", borderBottom: "1px solid #f1f5f9", fontSize: 12 }}>
+                              <span style={{ color: "#1e293b", fontWeight: 600 }}>{product.name}</span>
+                              <span style={{ color: isExactMatch ? "#dc2626" : "#64748b", fontWeight: 700, textAlign: "right" }}>{isExactMatch ? "Product already found" : "Similar name found"}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label style={labelStyle}>Barcodes (comma separated)</label>
@@ -785,17 +872,24 @@ export default function AdminPage() {
                   <input value={categoryInput} onChange={e => { setCategoryInput(e.target.value); setShowCatDropdown(true); }} onFocus={() => setShowCatDropdown(true)} onBlur={() => setTimeout(() => setShowCatDropdown(false), 200)} placeholder="Type to search or create category..." style={inputStyle} />
                   {showCatDropdown && (
                     <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "2px solid #e2e8f0", borderRadius: 10, zIndex: 100, maxHeight: 200, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", marginTop: 2 }}>
-                      {products.flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim()))
-                        .filter((cat, idx, arr) => cat && arr.findIndex(c => c.toLowerCase() === cat.toLowerCase()) === idx)
+                      {existingCategories
                         .filter(cat => !categoryInput || cat.toLowerCase().includes(categoryInput.toLowerCase()))
-                        .filter(cat => !selectedCategories.some(s => s.toLowerCase() === cat.toLowerCase()))
-                        .sort().map((cat, i) => (
-                          <div key={i} onMouseDown={() => { setSelectedCategories(prev => [...prev, cat]); setCategoryInput(""); setShowCatDropdown(false); }}
-                            style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#1e293b", fontWeight: 500, borderBottom: "1px solid #f1f5f9" }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "#fff5f5")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "#fff")}>{cat}</div>
-                        ))}
-                      {categoryInput.trim() && !products.flatMap(p => Array.isArray(p.category) ? p.category : getCatStr(p.category).split(",").map((s: string) => s.trim())).some(c => c.toLowerCase() === categoryInput.trim().toLowerCase()) && !selectedCategories.some(s => s.toLowerCase() === categoryInput.trim().toLowerCase()) && (
+                        .map(cat => {
+                          const selected = selectedCategories.some(value => value.toLowerCase() === cat.toLowerCase());
+                          return (
+                            <div key={cat} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #f1f5f9" }}>
+                              <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => {
+                                if (!selected) setSelectedCategories(prev => [...prev, cat]);
+                                setCategoryInput(""); setShowCatDropdown(false);
+                              }} style={{ flex: 1, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "10px 14px", background: "#fff", border: "none", cursor: selected ? "default" : "pointer", textAlign: "left", fontSize: 13, color: "#1e293b", fontWeight: 500 }}>
+                                <span>{cat}</span>
+                                {selected && <span style={{ color: "#64748b", fontSize: 10, fontWeight: 700 }}>Selected</span>}
+                              </button>
+                              <button type="button" aria-label={`Delete ${cat} category`} title={`Delete ${cat} category`} onMouseDown={event => event.preventDefault()} onClick={() => requestCategoryDeletion(cat)} style={{ width: 36, height: 36, margin: "0 6px", border: "1px solid #fecaca", borderRadius: 8, background: "#fff5f5", color: "#dc2626", cursor: "pointer", fontSize: 17, fontWeight: 800, lineHeight: 1 }}>×</button>
+                            </div>
+                          );
+                        })}
+                      {categoryInput.trim() && !existingCategories.some(category => category.toLowerCase() === categoryInput.trim().toLowerCase()) && !selectedCategories.some(s => s.toLowerCase() === categoryInput.trim().toLowerCase()) && (
                         <div onMouseDown={() => { const nc = categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase(); setSelectedCategories(prev => [...prev, nc]); setCategoryInput(""); setShowCatDropdown(false); }}
                           style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#16a34a", fontWeight: 600, background: "#f0fdf4", borderTop: "1px solid #e2e8f0" }}>
                           ＋ Create "{categoryInput.trim().charAt(0).toUpperCase() + categoryInput.trim().slice(1).toLowerCase()}"
@@ -965,6 +1059,42 @@ export default function AdminPage() {
             <button onClick={saveCipherKey} disabled={cipherLoading} style={{ width: "100%", background: cipherLoading ? "#a78bfa" : "linear-gradient(135deg,#7c3aed,#6d28d9)", color: "#fff", border: "none", borderRadius: 12, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
               {cipherLoading ? "Saving..." : "🔐 Update Cipher Key"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {saveDialog && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.62)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 18 }}>
+          <div role="alertdialog" aria-modal="true" aria-labelledby="save-error-title" style={{ background: "#fff", borderRadius: 14, padding: 24, width: "100%", maxWidth: 440, boxShadow: "0 20px 60px rgba(15,23,42,0.3)" }}>
+            <div style={{ width: 38, height: 38, display: "grid", placeItems: "center", borderRadius: 10, background: "#fff1f2", color: "#dc2626", fontSize: 22, fontWeight: 800, marginBottom: 12 }}>!</div>
+            <div id="save-error-title" style={{ fontSize: 18, fontWeight: 800, color: "#1e293b", marginBottom: 8 }}>{saveDialog.title}</div>
+            <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "#475569", marginBottom: 20 }}>{saveDialog.message}</div>
+            <button type="button" autoFocus onClick={() => setSaveDialog(null)} style={{ width: "100%", background: "#b91c1c", border: "none", borderRadius: 9, padding: "11px 14px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Okay</button>
+          </div>
+        </div>
+      )}
+
+      {categoryDeleteDialog && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.58)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 210, padding: 18 }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="category-delete-title" style={{ background: "#fff", borderRadius: 14, padding: 22, width: "100%", maxWidth: 560, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(15,23,42,0.25)" }}>
+            <div id="category-delete-title" style={{ fontSize: 17, fontWeight: 800, color: "#991b1b", marginBottom: 8 }}>Category still in use</div>
+            <div style={{ fontSize: 13, lineHeight: 1.5, color: "#475569", marginBottom: 12 }}>
+              {categoryDeleteDialog.products.length} products found in <strong>{categoryDeleteDialog.category}</strong>. Change the category on each product below before removing it.
+            </div>
+            <div style={{ overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 12 }}>
+              {categoryDeleteDialog.products.map(product => (
+                <div key={product.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "9px 10px", borderBottom: "1px solid #f1f5f9" }}>
+                  <span style={{ minWidth: 0, overflowWrap: "anywhere", fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{product.name}</span>
+                  <button type="button" onClick={() => {
+                    setPendingCategoryDeletion(categoryDeleteDialog.category);
+                    setCategoryDeleteDialog(null);
+                    startEdit(product);
+                  }} style={{ flexShrink: 0, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", borderRadius: 8, padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Edit category</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 14 }}>After the final product is reassigned, you will be asked to confirm permanent removal.</div>
+            <button type="button" onClick={() => setCategoryDeleteDialog(null)} style={{ alignSelf: "flex-end", background: "#f1f5f9", border: "1px solid #cbd5e1", color: "#334155", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Close</button>
           </div>
         </div>
       )}
